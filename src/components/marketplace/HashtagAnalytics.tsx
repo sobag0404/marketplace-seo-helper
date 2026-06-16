@@ -177,7 +177,7 @@ export const GROUP_LABELS: Record<string, string> = {
 
 interface HashtagAnalyticsProps {
   processedRows: TableRow[];
-  preset: Preset;
+  preset?: Preset;
   nameColumn: string;
 }
 
@@ -215,7 +215,7 @@ export function HashtagAnalytics({ processedRows, preset, nameColumn }: HashtagA
 
       // Find which rule groups matched this row
       const nameValue = row.cells[nameColumn];
-      if (nameValue && typeof nameValue === 'string' && nameValue.trim()) {
+      if (nameValue && typeof nameValue === 'string' && nameValue.trim() && preset) {
         const matched = findMatchingRulesForAnalytics(nameValue, preset.rules);
         for (const rule of matched) {
           groupMap[rule.id] = (groupMap[rule.id] || 0) + 1;

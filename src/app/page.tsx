@@ -24,7 +24,6 @@ import { ColumnSelector } from '@/components/marketplace/ColumnSelector';
 import { PreviewTable } from '@/components/marketplace/PreviewTable';
 import { ProcessingStats } from '@/components/marketplace/ProcessingStats';
 import { ExportButton } from '@/components/marketplace/ExportButton';
-import { PresetSelector } from '@/components/marketplace/PresetSelector';
 import { CategorySelector } from '@/components/marketplace/CategorySelector';
 import { DemoModeButton } from '@/components/marketplace/DemoModeButton';
 import { CustomKeywordsInput } from '@/components/marketplace/CustomKeywordsInput';
@@ -32,14 +31,13 @@ import { HashtagAnalytics, GROUP_LABELS } from '@/components/marketplace/Hashtag
 import { SheetSelector } from '@/components/marketplace/SheetSelector';
 import { BatchOperations } from '@/components/marketplace/BatchOperations';
 import { ExportFormatSelector, formatHashtagsForExport, type ExportFormat } from '@/components/marketplace/ExportFormatSelector';
-import { TemplateBuilder, getCustomPresets, customPresetToPreset, type CustomPresetData } from '@/components/marketplace/TemplateBuilder';
+// TemplateBuilder removed — using Ozon categories only
 import { HashtagQualityScore } from '@/components/marketplace/HashtagQualityScore';
 import { HashtagCloud } from '@/components/marketplace/HashtagCloud';
 
 import { parseExcelFile, createExcelWithHashtags, createCsvWithHashtags, resolveHashtagColumnName, getCellValue, getSheetNames } from '@/lib/marketplace/excel';
-import { generateHashtags, DEFAULT_SETTINGS } from '@/lib/marketplace/hashtagGenerator';
-import { blanketPreset } from '@/lib/marketplace/presets/blankets';
-import type { ParseResult, TableRow, ProcessingStats as Stats, Preset, GenerationSettings } from '@/lib/marketplace/types';
+import { DEFAULT_SETTINGS } from '@/lib/marketplace/hashtagGenerator';
+import type { ParseResult, TableRow, ProcessingStats as Stats, GenerationSettings } from '@/lib/marketplace/types';
 import { OZON_CATEGORIES, OzonCategory } from '@/lib/marketplace/ozonCategories';
 import { generateHashtagsFromCategory, getCategoryGroup, getAdjacentCategories, getCategoryGroupHashtags } from '@/lib/marketplace/categoryUtils';
 import { GenerationSettingsPanel } from '@/components/marketplace/GenerationSettingsPanel';
@@ -79,10 +77,8 @@ export default function HomePage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [hashtagColumnName, setHashtagColumnName] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
-  const [selectedPreset, setSelectedPreset] = useState<Preset>(blanketPreset);
   const [selectedOzonCategory, setSelectedOzonCategory] = useState<OzonCategory | null>(null);
   const [selectedOzonCategoryId, setSelectedOzonCategoryId] = useState<string | null>(null);
-  const [categoryMode, setCategoryMode] = useState<'preset' | 'ozon'>('ozon');
   const [isDark, setIsDark] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [customKeywords, setCustomKeywords] = useState<string[]>([]);
@@ -99,7 +95,6 @@ export default function HomePage() {
   const [keywordPreview, setKeywordPreview] = useState<string[]>([]);
   const [editingHashtag, setEditingHashtag] = useState<{ rowIdx: number; tagIdx: number } | null>(null);
   const [mergeOnRegen, setMergeOnRegen] = useState(false);
-  const [customPresetsList, setCustomPresetsList] = useState<CustomPresetData[]>([]);
   const [generationSettings, setGenerationSettings] = useState<GenerationSettings>(DEFAULT_SETTINGS);
   const [showGenSettings, setShowGenSettings] = useState(false);
 
@@ -240,8 +235,6 @@ export default function HomePage() {
         let errorCount = 0;
         const errorMessages: string[] = [];
 
-        const useOzonMode = categoryMode === 'ozon' && selectedOzonCategoryId;
-
         const newRows: TableRow[] = parseResult.rows.map((row, idx) => {
           try {
             const nameValue = getCellValue(row, selectedNameColumn);
@@ -253,33 +246,21 @@ export default function HomePage() {
 
             let hashtags: string;
 
-            if (useOzonMode) {
+            if (selectedOzonCategoryId) {
               // Ozon category mode — generate from category + product type + custom keywords
               const rawTags = generateHashtagsFromCategory(
-                selectedOzonCategoryId!,
+                selectedOzonCategoryId,
                 undefined,
                 customKeywords,
                 nameValue
               );
               hashtags = rawTags.slice(0, generationSettings.targetHashtagCount || 30).join(' ');
             } else {
-              // Legacy preset mode
-              const effectivePreset: Preset = customKeywords.length > 0
-                ? {
-                    ...selectedPreset,
-                    rules: [
-                      ...selectedPreset.rules,
-                      {
-                        id: 'custom',
-                        priority: 100,
-                        keywords: customKeywords,
-                        hashtags: customKeywords.map(kw => `#${kw.replace(/\s+/g, '_')}`),
-                      },
-                    ],
-                  }
-                : selectedPreset;
-
-              hashtags = generateHashtags(nameValue, effectivePreset, nameValue, generationSettings);
+              // No category selected — generate from custom keywords only
+              const tags = customKeywords.map(kw =>
+                kw.startsWith('#') ? kw : '#' + kw.replace(/\s+/g, '').toLowerCase()
+              ).filter(t => t.length > 2 && t.length <= 30);
+              hashtags = tags.join(' ');
             }
 
             // Merge with existing hashtags if mergeOnRegen is enabled
@@ -335,7 +316,7 @@ export default function HomePage() {
         setIsProcessing(false);
       }
     }, 300);
-  }, [parseResult, selectedNameColumn, selectedPreset, customKeywords, mergeOnRegen, processedRows, generationSettings, showError, toast, categoryMode, selectedOzonCategoryId]);
+  }, [parseResult, selectedNameColumn, customKeywords, mergeOnRegen, processedRows, generationSettings, showError, toast, selectedOzonCategoryId]);
 
   // Keep ref in sync for keyboard shortcut usage
   generateRef.current = handleGenerate;
@@ -1020,59 +1001,14 @@ export default function HomePage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Category mode switcher */}
-                  <div className="flex items-center gap-2">
-                    <div className="flex rounded-lg border bg-muted/50 p-0.5">
-                      <button
-                        onClick={() => setCategoryMode('ozon')}
-                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${
-                          categoryMode === 'ozon'
-                            ? 'bg-emerald-600 text-white shadow-sm'
-                            : 'text-muted-foreground hover:text-foreground'
-                        }`}
-                      >
-                        🏪 Категории Ozon (614)
-                      </button>
-                      <button
-                        onClick={() => setCategoryMode('preset')}
-                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${
-                          categoryMode === 'preset'
-                            ? 'bg-purple-600 text-white shadow-sm'
-                            : 'text-muted-foreground hover:text-foreground'
-                        }`}
-                      >
-                        📋 Пресеты (16)
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Category selector — Ozon or Preset */}
-                  {categoryMode === 'ozon' ? (
-                    <CategorySelector
-                      selectedCategoryId={selectedOzonCategoryId}
-                      onCategoryChange={(id, cat) => {
-                        setSelectedOzonCategoryId(id);
-                        setSelectedOzonCategory(cat);
-                      }}
-                    />
-                  ) : (
-                    <div className="flex items-start gap-2">
-                      <div className="flex-1">
-                        <PresetSelector
-                          selectedPreset={selectedPreset}
-                          onPresetChange={setSelectedPreset}
-                        />
-                      </div>
-                      <TemplateBuilder
-                        onPresetCreated={(cp) => {
-                          setCustomPresetsList(getCustomPresets());
-                        }}
-                        onPresetDeleted={() => {
-                          setCustomPresetsList(getCustomPresets());
-                        }}
-                      />
-                    </div>
-                  )}
+                  {/* Category selector */}
+                  <CategorySelector
+                    selectedCategoryId={selectedOzonCategoryId}
+                    onCategoryChange={(id, cat) => {
+                      setSelectedOzonCategoryId(id);
+                      setSelectedOzonCategory(cat);
+                    }}
+                  />
 
                   {/* Sheet selector (only for multi-sheet files) */}
                   <SheetSelector
@@ -1317,7 +1253,6 @@ export default function HomePage() {
                     selectable={currentStep === 'done'}
                     selectedRows={selectedRows}
                     onToggleRow={handleToggleRow}
-                    preset={selectedPreset}
                     showSuggestions={currentStep === 'done'}
                     targetHashtagCount={generationSettings.targetHashtagCount}
                   />
@@ -1412,7 +1347,6 @@ export default function HomePage() {
             <section className="mb-6 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: '150ms' }}>
               <HashtagAnalytics
                 processedRows={processedRows}
-                preset={selectedPreset}
                 nameColumn={selectedNameColumn}
               />
             </section>
@@ -1495,37 +1429,26 @@ export default function HomePage() {
             <Collapsible>
               <CollapsibleTrigger className="flex items-center gap-2 w-full py-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors duration-200 group">
                 <Info className="h-4 w-4" />
-                {categoryMode === 'ozon'
-                  ? `Категория Ozon: ${selectedOzonCategory?.name || 'не выбрана'} (${selectedOzonCategory?.productTypes.length || 0} типов)`
-                  : `Пресет: ${selectedPreset.name}`
+                {selectedOzonCategory
+                  ? `Категория Ozon: ${selectedOzonCategory.name} (${selectedOzonCategory.productTypes.length} типов)`
+                  : 'Выберите категорию Ozon'
                 }
                 <ChevronDown className="h-4 w-4 ml-auto transition-transform duration-200 group-data-[state=open]:rotate-180" />
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <div className="flex flex-wrap gap-2 pb-4 pl-6">
-                  {categoryMode === 'ozon' && selectedOzonCategory ? (
-                    <>
-                      {selectedOzonCategory.productTypes.map((type, idx) => (
-                        <Badge
-                          key={idx}
-                          variant="secondary"
-                          className="text-xs bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
-                        >
-                          {type}
-                        </Badge>
-                      ))}
-                    </>
-                  ) : (
-                    selectedPreset.rules.map((rule, idx) => (
+                  {selectedOzonCategory ? (
+                    selectedOzonCategory.productTypes.map((type, idx) => (
                       <Badge
-                        key={rule.id}
+                        key={idx}
                         variant="secondary"
-                        className="text-xs bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-all duration-200 cursor-default"
+                        className="text-xs bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
                       >
-                        {GROUP_LABELS[rule.id] || rule.id}
-                        <span className="ml-1 opacity-50">({rule.priority})</span>
+                        {type}
                       </Badge>
                     ))
+                  ) : (
+                    <span className="text-sm text-muted-foreground">Выберите категорию для просмотра типов товаров</span>
                   )}
                 </div>
               </CollapsibleContent>
