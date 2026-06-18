@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   Shield, Sparkles, Hash, BookOpen, AlertCircle, Info,
   ChevronDown, ChevronUp, Wand2, RotateCcw, Download,
-  CheckCircle2, Circle, Loader2, Moon, Sun, ClipboardList,
+  CheckCircle2, Circle, Loader2, Moon, Sun,
   FileSpreadsheet, FileText, Pencil, PencilOff, Search,
   Undo2, Filter, Rows3, Zap, Keyboard, Eye, PencilLine,
   Plus, Merge, Tag, Boxes
@@ -36,6 +36,7 @@ import { BatchOperations } from '@/components/marketplace/BatchOperations';
 import { ExportFormatSelector, formatHashtagsForExport, FORMAT_LIMITS, type ExportFormat } from '@/components/marketplace/ExportFormatSelector';
 import { HashtagQualityScore } from '@/components/marketplace/HashtagQualityScore';
 import { HashtagCloud } from '@/components/marketplace/HashtagCloud';
+import { BulkCopyButton } from '@/components/marketplace/BulkCopyButton';
 
 import { parseExcelFile, createExcelWithHashtags, createCsvWithHashtags, resolveHashtagColumnName, getCellValue, getSheetNames } from '@/lib/marketplace/excel';
 import { DEFAULT_SETTINGS } from '@/lib/marketplace/hashtagGenerator';
@@ -425,34 +426,6 @@ export default function HomePage() {
       description: `${fileName.replace(/\.(xlsx|xls|csv)$/i, '')}_hashtagged.csv`,
     });
   }, [parseResult, processedRows, hashtagColumnName, fileName, exportFormat, toast]);
-
-  const handleBulkCopy = useCallback(async () => {
-    const allHashtags = processedRows
-      .map((row) => row.hashtags || '')
-      .filter((h) => h.trim().length > 0)
-      .join('\n');
-
-    if (!allHashtags) return;
-
-    try {
-      await navigator.clipboard.writeText(allHashtags);
-      toast({
-        title: 'Все хештеги скопированы',
-        description: `${stats?.rowsWithHashtags || 0} строк скопировано в буфер обмена`,
-      });
-    } catch {
-      const textArea = document.createElement('textarea');
-      textArea.value = allHashtags;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-      toast({
-        title: 'Все хештеги скопированы',
-        description: `${stats?.rowsWithHashtags || 0} строк скопировано в буфер обмена`,
-      });
-    }
-  }, [processedRows, stats, toast]);
 
   const toggleDarkMode = useCallback(() => {
     setIsDark((prev) => {
@@ -1401,15 +1374,12 @@ export default function HomePage() {
                       <FileText className="h-5 w-5" />
                       Скачать CSV
                     </Button>
-                    <Button
-                      onClick={handleBulkCopy}
-                      variant="outline"
-                      size="lg"
-                      className="gap-2 flex-1 sm:flex-none hover:border-purple-300 hover:text-purple-600 dark:hover:text-purple-400 transition-all duration-200"
-                    >
-                      <ClipboardList className="h-5 w-5" />
-                      Копировать все
-                    </Button>
+                    <BulkCopyButton
+                      processedRows={processedRows}
+                      exportFormat={exportFormat}
+                      rowsWithHashtags={stats?.rowsWithHashtags ?? 0}
+                      onToast={(title, description) => toast({ title, description })}
+                    />
                   </>
                 )}
 
@@ -1548,24 +1518,28 @@ export default function HomePage() {
 
         {/* Footer */}
         <footer className="border-t mt-auto bg-gradient-to-r from-background via-muted/30 to-background backdrop-blur-xl relative overflow-hidden">
-          {/* Subtle decorative line */}
-          <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-emerald-400/30 to-transparent" />
-          <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5">
+          {/* Animated gradient accent line */}
+          <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-emerald-400/40 to-transparent animate-gradient" />
+          {/* Subtle floating orbs */}
+          <div className="absolute -bottom-8 -left-8 h-24 w-24 rounded-full bg-emerald-200/5 dark:bg-emerald-800/5 blur-2xl animate-float-slow pointer-events-none" />
+          <div className="absolute -bottom-8 -right-8 h-24 w-24 rounded-full bg-teal-200/5 dark:bg-teal-800/5 blur-2xl animate-float pointer-events-none" />
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 relative">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
-                <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-md shadow-emerald-200/30 dark:shadow-emerald-900/30">
-                  <Hash className="h-3.5 w-3.5 text-white" />
+                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-md shadow-emerald-200/30 dark:shadow-emerald-900/30 animate-pulse-glow">
+                  <Hash className="h-4 w-4 text-white" />
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-xs font-semibold text-foreground leading-tight">
+                  <span className="text-xs font-semibold text-foreground leading-tight flex items-center gap-1.5">
                     Marketplace SEO Helper
+                    <span className="text-[9px] px-1 py-0 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 font-mono">v8</span>
                   </span>
                   <span className="text-[10px] text-muted-foreground/70">
-                    генератор хештегов для маркетплейсов • v7
+                    генератор хештегов для Ozon, WB и соцсетей
                   </span>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap justify-center">
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-emerald-200/60 text-emerald-600/80 dark:border-emerald-800/60 dark:text-emerald-400/80 hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20 transition-colors">
                   <Shield className="h-2.5 w-2.5 mr-0.5" />
                   Без backend
@@ -1578,8 +1552,20 @@ export default function HomePage() {
                 </Badge>
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-amber-200/60 text-amber-600/80 dark:border-amber-800/60 dark:text-amber-400/80 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors">
                   <Zap className="h-2.5 w-2.5 mr-0.5" />
-                  614 категорий Ozon
+                  614 категорий
                 </Badge>
+                <a
+                  href="https://github.com/sobag0404/marketplace-seo-helper"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 h-5 rounded-full border border-foreground/15 text-muted-foreground/80 hover:bg-muted/50 hover:text-foreground transition-colors"
+                  title="GitHub репозиторий"
+                >
+                  <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+                  </svg>
+                  GitHub
+                </a>
               </div>
             </div>
           </div>
