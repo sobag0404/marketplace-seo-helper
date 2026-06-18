@@ -33,7 +33,7 @@ import { CustomKeywordsInput } from '@/components/marketplace/CustomKeywordsInpu
 import { HashtagAnalytics } from '@/components/marketplace/HashtagAnalytics';
 import { SheetSelector } from '@/components/marketplace/SheetSelector';
 import { BatchOperations } from '@/components/marketplace/BatchOperations';
-import { ExportFormatSelector, formatHashtagsForExport, type ExportFormat } from '@/components/marketplace/ExportFormatSelector';
+import { ExportFormatSelector, formatHashtagsForExport, FORMAT_LIMITS, type ExportFormat } from '@/components/marketplace/ExportFormatSelector';
 import { HashtagQualityScore } from '@/components/marketplace/HashtagQualityScore';
 import { HashtagCloud } from '@/components/marketplace/HashtagCloud';
 
@@ -95,6 +95,18 @@ export default function HomePage() {
   const [showConfetti, setShowConfetti] = useState(false);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [exportFormat, setExportFormat] = useState<ExportFormat>('default');
+
+  // Auto-adjust target hashtag count when export format changes
+  const handleExportFormatChange = useCallback((format: ExportFormat) => {
+    setExportFormat(format);
+    const limit = FORMAT_LIMITS[format];
+    if (limit < generationSettings.targetHashtagCount) {
+      setGenerationSettings((prev) => ({
+        ...prev,
+        targetHashtagCount: limit,
+      }));
+    }
+  }, [generationSettings.targetHashtagCount]);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [keywordPreview, setKeywordPreview] = useState<string[]>([]);
   const [editingHashtag, setEditingHashtag] = useState<{ rowIdx: number; tagIdx: number } | null>(null);
@@ -1147,7 +1159,7 @@ export default function HomePage() {
                   {/* Export format selector */}
                   <ExportFormatSelector
                     value={exportFormat}
-                    onChange={setExportFormat}
+                    onChange={handleExportFormatChange}
                   />
 
                   {/* Merge on regenerate toggle */}
