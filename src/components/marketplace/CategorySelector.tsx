@@ -17,7 +17,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { Check, ChevronsUpDown, Search, Layers, Tag } from 'lucide-react';
+import { Check, ChevronsUpDown, Search, Layers, Tag, Star } from 'lucide-react';
 import { OZON_CATEGORIES, OzonCategory } from '@/lib/marketplace/ozonCategories';
 import { SEMANTIC_GROUPS, SemanticGroup } from '@/lib/marketplace/semanticGroups';
 import { searchCategories } from '@/lib/marketplace/categoryUtils';
@@ -25,9 +25,16 @@ import { searchCategories } from '@/lib/marketplace/categoryUtils';
 interface CategorySelectorProps {
   selectedCategoryId: string | null;
   onCategoryChange: (categoryId: string | null, category: OzonCategory | null) => void;
+  isFavorite?: boolean;
+  onToggleFavorite?: (id: string) => void;
 }
 
-export function CategorySelector({ selectedCategoryId, onCategoryChange }: CategorySelectorProps) {
+export function CategorySelector({
+  selectedCategoryId,
+  onCategoryChange,
+  isFavorite,
+  onToggleFavorite,
+}: CategorySelectorProps) {
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -162,9 +169,28 @@ export function CategorySelector({ selectedCategoryId, onCategoryChange }: Categ
         </PopoverContent>
       </Popover>
       {selectedCategory && (
-        <span className="text-xs text-muted-foreground hidden sm:inline max-w-[200px] truncate">
-          {selectedCategory.productTypes.slice(0, 3).join(', ')}...
-        </span>
+        <div className="flex items-center gap-2">
+          {onToggleFavorite && (
+            <button
+              type="button"
+              onClick={() => onToggleFavorite(selectedCategory.id)}
+              className="inline-flex items-center justify-center h-8 w-8 rounded-lg transition-all duration-200 hover:bg-amber-50 dark:hover:bg-amber-950/30 group"
+              aria-label={isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
+              title={isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
+            >
+              <Star
+                className={`h-4 w-4 transition-all duration-200 ${
+                  isFavorite
+                    ? 'fill-amber-400 text-amber-400 group-hover:scale-110'
+                    : 'text-muted-foreground/50 group-hover:text-amber-400 group-hover:fill-amber-200/50'
+                }`}
+              />
+            </button>
+          )}
+          <span className="text-xs text-muted-foreground hidden sm:inline max-w-[200px] truncate">
+            {selectedCategory.productTypes.slice(0, 3).join(', ')}...
+          </span>
+        </div>
       )}
     </div>
   );

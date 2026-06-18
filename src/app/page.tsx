@@ -7,7 +7,7 @@ import {
   CheckCircle2, Circle, Loader2, Moon, Sun,
   FileSpreadsheet, FileText, Pencil, PencilOff, Search,
   Undo2, Filter, Rows3, Zap, Keyboard, Eye, PencilLine,
-  Plus, Merge, Tag, Boxes
+  Plus, Merge, Tag, Boxes, Star
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -27,16 +27,16 @@ import { ExportButton } from '@/components/marketplace/ExportButton';
 import { CategorySelector } from '@/components/marketplace/CategorySelector';
 import { ProductTypeSelector } from '@/components/marketplace/ProductTypeSelector';
 import { LivePreview } from '@/components/marketplace/LivePreview';
-import { RecentCategories, useRecentCategories } from '@/components/marketplace/RecentCategories';
+import { RecentCategories, useRecentCategories, useCategoryFavorites } from '@/components/marketplace/RecentCategories';
 import { DemoModeButton } from '@/components/marketplace/DemoModeButton';
 import { CustomKeywordsInput } from '@/components/marketplace/CustomKeywordsInput';
 import { HashtagAnalytics } from '@/components/marketplace/HashtagAnalytics';
 import { SheetSelector } from '@/components/marketplace/SheetSelector';
 import { BatchOperations } from '@/components/marketplace/BatchOperations';
 import { ExportFormatSelector, formatHashtagsForExport, FORMAT_LIMITS, type ExportFormat } from '@/components/marketplace/ExportFormatSelector';
-import { HashtagQualityScore } from '@/components/marketplace/HashtagQualityScore';
 import { HashtagCloud } from '@/components/marketplace/HashtagCloud';
 import { BulkCopyButton } from '@/components/marketplace/BulkCopyButton';
+import { HashtagsOnlyExport } from '@/components/marketplace/HashtagsOnlyExport';
 
 import { parseExcelFile, createExcelWithHashtags, createCsvWithHashtags, resolveHashtagColumnName, getCellValue, getSheetNames } from '@/lib/marketplace/excel';
 import { DEFAULT_SETTINGS } from '@/lib/marketplace/hashtagGenerator';
@@ -84,6 +84,7 @@ export default function HomePage() {
   const [selectedOzonCategoryId, setSelectedOzonCategoryId] = useState<string | null>(null);
   const [selectedProductType, setSelectedProductType] = useState<string | null>(null);
   const { recent: recentCategories, record: recordRecentCategory, clear: clearRecentCategories } = useRecentCategories();
+  const { favorites: favoriteCategories, toggle: toggleFavoriteCategory } = useCategoryFavorites();
   const [isDark, setIsDark] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [customKeywords, setCustomKeywords] = useState<string[]>([]);
@@ -1028,9 +1029,10 @@ export default function HomePage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Recent categories quick-access (localStorage) */}
+                  {/* Recent + favorites quick-access (localStorage) */}
                   <RecentCategories
                     recent={recentCategories}
+                    favorites={favoriteCategories}
                     selectedCategoryId={selectedOzonCategoryId}
                     onCategoryChange={(id, cat) => {
                       setSelectedOzonCategoryId(id);
@@ -1039,6 +1041,7 @@ export default function HomePage() {
                       recordRecentCategory(id);
                     }}
                     onClear={clearRecentCategories}
+                    onToggleFavorite={toggleFavoriteCategory}
                   />
 
                   {/* Category selector */}
@@ -1050,6 +1053,8 @@ export default function HomePage() {
                       setSelectedProductType(null);
                       recordRecentCategory(id);
                     }}
+                    isFavorite={selectedOzonCategoryId ? favoriteCategories.some(f => f.id === selectedOzonCategoryId) : false}
+                    onToggleFavorite={toggleFavoriteCategory}
                   />
 
                   {/* Product type selector — appears once a category is chosen */}
@@ -1374,6 +1379,13 @@ export default function HomePage() {
                       <FileText className="h-5 w-5" />
                       Скачать CSV
                     </Button>
+                    <HashtagsOnlyExport
+                      processedRows={processedRows}
+                      exportFormat={exportFormat}
+                      rowsWithHashtags={stats?.rowsWithHashtags ?? 0}
+                      baseFileName={fileName.replace(/\.(xlsx|xls|csv)$/i, '')}
+                      onToast={(title, description) => toast({ title, description })}
+                    />
                     <BulkCopyButton
                       processedRows={processedRows}
                       exportFormat={exportFormat}
@@ -1433,7 +1445,8 @@ export default function HomePage() {
                 items={[
                   'Загрузите файл (.xlsx, .xls или .csv) с наименованиями товаров',
                   'Выберите лист таблицы (для многостраничных Excel)',
-                  'Выберите категорию Ozon (614 категорий с поиском) или пресет',
+                  'Выберите категорию Ozon из 614 категорий с поиском',
+                  'Уточните тип товара внутри категории (9 328 типов)',
                   'Настройте минимум/максимум хештегов (по умолчанию 10–30)',
                   'Включите русский приоритет и смежные категории',
                   'Добавьте свои ключевые слова при необходимости',
@@ -1441,11 +1454,10 @@ export default function HomePage() {
                   'Нажмите «Сгенерировать хештеги»',
                   'Отредактируйте результат при необходимости (Ctrl+Z для отмены)',
                   'Используйте поиск для фильтрации по хештегам (Ctrl+F)',
-                  'Изучите аналитику: частотность групп и топ хештегов',
+                  'Изучите аналитику: язык, длина, топ хештегов',
                   'Горячие клавиши: Ctrl+G — генерация, Ctrl+F — поиск',
-                  'Конструктор пресетов: создайте свои группы хештегов',
-                  'Объединение хештегов при перегенерации (чекбокс)',
-                  'Скачайте готовый файл или скопируйте хештеги',
+                  'Скопируйте хештеги в буфер (4 режима) или скачайте файл',
+                  'Добавьте любимые категории в «Избранное» (★) для быстрого доступа',
                 ]}
               />
               <InfoCard
@@ -1460,13 +1472,14 @@ export default function HomePage() {
                   'Английские допускаются: бренды (Ford, BMW) и популярные (love, kawaii)',
                   'Отражают: тренд, стиль, настроение, повод, аудиторию',
                   'Запрещены: бренды, размеры, артикулы, названия товаров',
+                  'Морфологическая дедупликация: #плед и #пледы не дублируются',
                   'Минимум 10 хештегов — настраиваемый (от 1 до 30)',
                   'При минимуме 1 — выбирается самый популярный хештег',
                   'Можно удалить ненужные хештеги перед экспортом',
                   'Двойной клик на хештег — редактирование',
                   'Отмена изменений: Ctrl+Z или кнопка ↩ в шапке',
                   'Смежные категории добавляют хештеги по смыслу',
-                  'Аналитика показывает частотность групп и топ хештегов',
+                  'Аналитика показывает язык, длину и топ хештегов',
                 ]}
               />
               <InfoCard
@@ -1532,7 +1545,7 @@ export default function HomePage() {
                 <div className="flex flex-col">
                   <span className="text-xs font-semibold text-foreground leading-tight flex items-center gap-1.5">
                     Marketplace SEO Helper
-                    <span className="text-[9px] px-1 py-0 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 font-mono">v8</span>
+                    <span className="text-[9px] px-1 py-0 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 font-mono">v9</span>
                   </span>
                   <span className="text-[10px] text-muted-foreground/70">
                     генератор хештегов для Ozon, WB и соцсетей
@@ -1549,6 +1562,10 @@ export default function HomePage() {
                 </Badge>
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-teal-200/60 text-teal-600/80 dark:border-teal-800/60 dark:text-teal-400/80 hover:bg-teal-50/50 dark:hover:bg-teal-950/20 transition-colors">
                   100% браузер
+                </Badge>
+                <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-amber-200/60 text-amber-600/80 dark:border-amber-800/60 dark:text-amber-400/80 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors">
+                  <Star className="h-2.5 w-2.5 mr-0.5 fill-amber-400 text-amber-400" />
+                  Избранное ★
                 </Badge>
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-amber-200/60 text-amber-600/80 dark:border-amber-800/60 dark:text-amber-400/80 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors">
                   <Zap className="h-2.5 w-2.5 mr-0.5" />
