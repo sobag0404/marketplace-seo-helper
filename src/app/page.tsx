@@ -95,24 +95,24 @@ export default function HomePage() {
   const [showConfetti, setShowConfetti] = useState(false);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [exportFormat, setExportFormat] = useState<ExportFormat>('default');
-
-  // Auto-adjust target hashtag count when export format changes
-  const handleExportFormatChange = useCallback((format: ExportFormat) => {
-    setExportFormat(format);
-    const limit = FORMAT_LIMITS[format];
-    if (limit < generationSettings.targetHashtagCount) {
-      setGenerationSettings((prev) => ({
-        ...prev,
-        targetHashtagCount: limit,
-      }));
-    }
-  }, [generationSettings.targetHashtagCount]);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [keywordPreview, setKeywordPreview] = useState<string[]>([]);
   const [editingHashtag, setEditingHashtag] = useState<{ rowIdx: number; tagIdx: number } | null>(null);
   const [mergeOnRegen, setMergeOnRegen] = useState(false);
   const [generationSettings, setGenerationSettings] = useState<GenerationSettings>(DEFAULT_SETTINGS);
   const [showGenSettings, setShowGenSettings] = useState(false);
+
+  // Auto-adjust target hashtag count when export format changes
+  const handleExportFormatChange = useCallback((format: ExportFormat) => {
+    setExportFormat(format);
+    const limit = FORMAT_LIMITS[format];
+    setGenerationSettings((prev) => {
+      if (limit < prev.targetHashtagCount) {
+        return { ...prev, targetHashtagCount: limit };
+      }
+      return prev;
+    });
+  }, []);
 
   const { toast } = useToast();
   const searchInputRef = useRef<HTMLInputElement>(null);
