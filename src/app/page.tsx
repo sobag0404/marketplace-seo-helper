@@ -27,7 +27,7 @@ import { ExportButton } from '@/components/marketplace/ExportButton';
 import { CategorySelector } from '@/components/marketplace/CategorySelector';
 import { ProductTypeSelector } from '@/components/marketplace/ProductTypeSelector';
 import { LivePreview } from '@/components/marketplace/LivePreview';
-import { RecentCategories, useRecentCategories, useCategoryFavorites } from '@/components/marketplace/RecentCategories';
+import { RecentCategories, useRecentCategories, useCategoryFavorites, useCategoryUsage } from '@/components/marketplace/RecentCategories';
 import { DemoModeButton } from '@/components/marketplace/DemoModeButton';
 import { CustomKeywordsInput } from '@/components/marketplace/CustomKeywordsInput';
 import { HashtagAnalytics } from '@/components/marketplace/HashtagAnalytics';
@@ -39,6 +39,7 @@ import { BulkCopyButton } from '@/components/marketplace/BulkCopyButton';
 import { HashtagsOnlyExport } from '@/components/marketplace/HashtagsOnlyExport';
 import { SettingsPresets, type SettingsPreset } from '@/components/marketplace/SettingsPresets';
 import { useAutosaveSettings, useReadAutosave, clearAutosave } from '@/components/marketplace/useAutosaveSettings';
+import { LastSavedIndicator } from '@/components/marketplace/LastSavedIndicator';
 
 import { parseExcelFile, createExcelWithHashtags, createCsvWithHashtags, resolveHashtagColumnName, getCellValue, getSheetNames } from '@/lib/marketplace/excel';
 import { DEFAULT_SETTINGS } from '@/lib/marketplace/hashtagGenerator';
@@ -87,6 +88,7 @@ export default function HomePage() {
   const [selectedProductType, setSelectedProductType] = useState<string | null>(null);
   const { recent: recentCategories, record: recordRecentCategory, clear: clearRecentCategories } = useRecentCategories();
   const { favorites: favoriteCategories, toggle: toggleFavoriteCategory } = useCategoryFavorites();
+  const { usage: categoryUsage, recordUse: recordCategoryUsage } = useCategoryUsage();
   const [isDark, setIsDark] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [customKeywords, setCustomKeywords] = useState<string[]>([]);
@@ -1135,16 +1137,18 @@ export default function HomePage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Recent + favorites quick-access (localStorage) */}
+                  {/* Recent + favorites + top-usage quick-access (localStorage) */}
                   <RecentCategories
                     recent={recentCategories}
                     favorites={favoriteCategories}
+                    usage={categoryUsage}
                     selectedCategoryId={selectedOzonCategoryId}
                     onCategoryChange={(id, cat) => {
                       setSelectedOzonCategoryId(id);
                       setSelectedOzonCategory(cat);
                       setSelectedProductType(null);
                       recordRecentCategory(id);
+                      recordCategoryUsage(id);
                     }}
                     onClear={clearRecentCategories}
                     onToggleFavorite={toggleFavoriteCategory}
@@ -1158,6 +1162,7 @@ export default function HomePage() {
                       setSelectedOzonCategory(cat);
                       setSelectedProductType(null);
                       recordRecentCategory(id);
+                      recordCategoryUsage(id);
                     }}
                     isFavorite={selectedOzonCategoryId ? favoriteCategories.some(f => f.id === selectedOzonCategoryId) : false}
                     onToggleFavorite={toggleFavoriteCategory}
@@ -1560,6 +1565,8 @@ export default function HomePage() {
                   'Сохраните настройки в JSON («Настройки» → «Сохранить») для повторного использования',
                   'Загрузите настройки из JSON для нового файла без перенастройки',
                   'Настройки автосохраняются в браузере — после reload вы вернётесь туда же',
+                  'Счётчик использований показывает самые частые категории (фиолетовые чипы «Частые»)',
+                  'Время последнего сохранения видно в футере (зелёный индикатор)',
                   'Выберите колонку с наименованием (определяется автоматически)',
                   'Нажмите «Сгенерировать хештеги»',
                   'Отредактируйте результат при необходимости (Ctrl+Z для отмены)',
@@ -1656,7 +1663,7 @@ export default function HomePage() {
                 <div className="flex flex-col">
                   <span className="text-xs font-semibold text-foreground leading-tight flex items-center gap-1.5">
                     Marketplace SEO Helper
-                    <span className="text-[9px] px-1 py-0 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 font-mono">v11</span>
+                    <span className="text-[9px] px-1 py-0 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 font-mono">v12</span>
                   </span>
                   <span className="text-[10px] text-muted-foreground/70">
                     генератор хештегов для Ozon, WB и соцсетей
@@ -1690,6 +1697,7 @@ export default function HomePage() {
                   <Zap className="h-2.5 w-2.5 mr-0.5" />
                   614 категорий
                 </Badge>
+                <LastSavedIndicator />
                 <a
                   href="https://github.com/sobag0404/marketplace-seo-helper"
                   target="_blank"
