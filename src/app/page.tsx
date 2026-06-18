@@ -7,7 +7,7 @@ import {
   CheckCircle2, Circle, Loader2, Moon, Sun, ClipboardList,
   FileSpreadsheet, FileText, Pencil, PencilOff, Search,
   Undo2, Filter, Rows3, Zap, Keyboard, Eye, PencilLine,
-  Plus, Merge
+  Plus, Merge, Tag, Boxes
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -26,6 +26,8 @@ import { ProcessingStats } from '@/components/marketplace/ProcessingStats';
 import { ExportButton } from '@/components/marketplace/ExportButton';
 import { CategorySelector } from '@/components/marketplace/CategorySelector';
 import { ProductTypeSelector } from '@/components/marketplace/ProductTypeSelector';
+import { LivePreview } from '@/components/marketplace/LivePreview';
+import { RecentCategories, useRecentCategories } from '@/components/marketplace/RecentCategories';
 import { DemoModeButton } from '@/components/marketplace/DemoModeButton';
 import { CustomKeywordsInput } from '@/components/marketplace/CustomKeywordsInput';
 import { HashtagAnalytics } from '@/components/marketplace/HashtagAnalytics';
@@ -80,6 +82,7 @@ export default function HomePage() {
   const [selectedOzonCategory, setSelectedOzonCategory] = useState<OzonCategory | null>(null);
   const [selectedOzonCategoryId, setSelectedOzonCategoryId] = useState<string | null>(null);
   const [selectedProductType, setSelectedProductType] = useState<string | null>(null);
+  const { recent: recentCategories, record: recordRecentCategory, clear: clearRecentCategories } = useRecentCategories();
   const [isDark, setIsDark] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [customKeywords, setCustomKeywords] = useState<string[]>([]);
@@ -693,6 +696,16 @@ export default function HomePage() {
     return rows;
   }, [currentStep, processedRows, parseResult, hashtagColumnName, searchQuery]);
 
+  /** Sample product name (first non-empty row) for live preview */
+  const sampleProductName = useMemo(() => {
+    if (!parseResult || !selectedNameColumn) return undefined;
+    for (const row of parseResult.rows) {
+      const val = getCellValue(row, selectedNameColumn);
+      if (val.trim()) return val.trim();
+    }
+    return undefined;
+  }, [parseResult, selectedNameColumn]);
+
   const processedRowIndices = useMemo(() => {
     // When search is active, we need to map filtered indices back to processedRows
     if (searchQuery.trim() && currentStep === 'done') {
@@ -943,6 +956,34 @@ export default function HomePage() {
                           614 категорий Ozon + смежные
                         </div>
                       </div>
+                      {/* Stats strip */}
+                      <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-2.5 max-w-2xl">
+                        {[
+                          { num: '614', label: 'категорий Ozon', icon: Tag },
+                          { num: '9 328', label: 'типов товаров', icon: Boxes },
+                          { num: '9', label: 'форматов экспорта', icon: FileSpreadsheet },
+                          { num: '100%', label: 'в браузере, без сервера', icon: Shield },
+                        ].map((stat, i) => {
+                          const StatIcon = stat.icon;
+                          return (
+                            <div
+                              key={i}
+                              className="bg-white/10 rounded-xl px-3 py-2.5 backdrop-blur-md border border-white/10 flex items-center gap-2.5 hover:bg-white/15 transition-colors duration-300 animate-count-up"
+                              style={{ animationDelay: `${i * 80}ms` }}
+                            >
+                              <StatIcon className="h-4 w-4 text-emerald-100/80 shrink-0" />
+                              <div className="min-w-0">
+                                <div className="text-base sm:text-lg font-extrabold text-white leading-none tabular-nums">
+                                  {stat.num}
+                                </div>
+                                <div className="text-[10px] text-emerald-100/70 mt-0.5 truncate">
+                                  {stat.label}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 </CardContent>
@@ -1002,6 +1043,19 @@ export default function HomePage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {/* Recent categories quick-access (localStorage) */}
+                  <RecentCategories
+                    recent={recentCategories}
+                    selectedCategoryId={selectedOzonCategoryId}
+                    onCategoryChange={(id, cat) => {
+                      setSelectedOzonCategoryId(id);
+                      setSelectedOzonCategory(cat);
+                      setSelectedProductType(null);
+                      recordRecentCategory(id);
+                    }}
+                    onClear={clearRecentCategories}
+                  />
+
                   {/* Category selector */}
                   <CategorySelector
                     selectedCategoryId={selectedOzonCategoryId}
@@ -1009,6 +1063,7 @@ export default function HomePage() {
                       setSelectedOzonCategoryId(id);
                       setSelectedOzonCategory(cat);
                       setSelectedProductType(null);
+                      recordRecentCategory(id);
                     }}
                   />
 
@@ -1020,6 +1075,15 @@ export default function HomePage() {
                       onChange={setSelectedProductType}
                     />
                   )}
+
+                  {/* Live preview — sample hashtags from current settings */}
+                  <LivePreview
+                    category={selectedOzonCategory}
+                    productType={selectedProductType}
+                    customKeywords={customKeywords}
+                    targetCount={generationSettings.targetHashtagCount}
+                    sampleName={sampleProductName}
+                  />
 
                   {/* Sheet selector (only for multi-sheet files) */}
                   <SheetSelector

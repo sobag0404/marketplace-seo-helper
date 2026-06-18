@@ -1,6 +1,7 @@
 import { OZON_CATEGORIES, OzonCategory } from './ozonCategories';
 import { SEMANTIC_GROUPS, SemanticGroup, getGroupBaseHashtags } from './semanticGroups';
 import { rankHashtags } from './hashtagGenerator';
+import { dedupHashtagsMorphological } from './stemmer';
 
 /** Find category by its slug ID */
 export function findCategoryById(id: string): OzonCategory | undefined {
@@ -201,21 +202,14 @@ export function generateHashtagsFromCategory(
     }
   }
 
-  // Dedupe (case-insensitive), validate, rank russian-first, cap at 30
-  const seen = new Set<string>();
-  const deduped = hashtags.filter((tag) => {
-    const key = tag.toLowerCase();
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  const valid = deduped
+  // Validate length + format first
+  const valid = hashtags
     .filter(tag => tag.length > 2 && tag.length <= 30)
     .filter(tag => /^#[a-zа-яё0-9]+$/i.test(tag));
 
-  // Russian hashtags first, then allowed English, then other
-  return rankHashtags(valid).slice(0, 30);
+  // Morphological dedup (#плед / #пледы → keep first), then rank russian-first, cap 30
+  const deduped = dedupHashtagsMorphological(valid);
+  return rankHashtags(deduped).slice(0, 30);
 }
 
 /** Forbidden words that shouldn't become hashtags */
