@@ -1,26 +1,3 @@
-/** Правило генерации хештегов — одна тематическая группа */
-export interface HashtagRule {
-  id: string;
-  priority: number;
-  keywords: string[];
-  hashtags: string[];
-  /** Популярность группы (0-100) — чем выше, тем популярнее хештеги этой группы */
-  popularity?: number;
-}
-
-/** Пресет — набор правил для конкретной категории товаров */
-export interface Preset {
-  id: string;
-  name: string;
-  description: string;
-  rules: HashtagRule[];
-  baseHashtags: string[];
-  universalHashtags: string[];
-  forbiddenWords: string[];
-  /** Связанные категории — ID пресетов, из которых можно брать хештеги */
-  relatedCategories?: string[];
-}
-
 /** Одна строка таблицы после парсинга */
 export interface TableRow {
   rowIndex: number;

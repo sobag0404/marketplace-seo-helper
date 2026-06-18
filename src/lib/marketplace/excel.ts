@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import type { ParseResult, TableRow } from './types';
-import { nameColumnKeywords, articleColumnKeywords } from './presets/common';
+import { nameColumnKeywords, articleColumnKeywords } from './common';
 
 /** Прочитать Excel- или CSV-файл и вернуть результат парсинга */
 export function parseExcelFile(buffer: ArrayBuffer, fileName?: string, sheetName?: string): ParseResult {

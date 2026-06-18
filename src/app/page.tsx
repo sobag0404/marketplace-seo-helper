@@ -27,11 +27,10 @@ import { ExportButton } from '@/components/marketplace/ExportButton';
 import { CategorySelector } from '@/components/marketplace/CategorySelector';
 import { DemoModeButton } from '@/components/marketplace/DemoModeButton';
 import { CustomKeywordsInput } from '@/components/marketplace/CustomKeywordsInput';
-import { HashtagAnalytics, GROUP_LABELS } from '@/components/marketplace/HashtagAnalytics';
+import { HashtagAnalytics } from '@/components/marketplace/HashtagAnalytics';
 import { SheetSelector } from '@/components/marketplace/SheetSelector';
 import { BatchOperations } from '@/components/marketplace/BatchOperations';
 import { ExportFormatSelector, formatHashtagsForExport, type ExportFormat } from '@/components/marketplace/ExportFormatSelector';
-// TemplateBuilder removed — using Ozon categories only
 import { HashtagQualityScore } from '@/components/marketplace/HashtagQualityScore';
 import { HashtagCloud } from '@/components/marketplace/HashtagCloud';
 
@@ -1254,6 +1253,9 @@ export default function HomePage() {
                     selectedRows={selectedRows}
                     onToggleRow={handleToggleRow}
                     showSuggestions={currentStep === 'done'}
+                    categoryId={selectedOzonCategoryId ?? undefined}
+                    productType={selectedOzonCategory?.productTypes?.[0]}
+                    customKeywords={customKeywords}
                     targetHashtagCount={generationSettings.targetHashtagCount}
                   />
                 </CardContent>

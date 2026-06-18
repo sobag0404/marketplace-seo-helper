@@ -1,5 +1,5 @@
 import type { ValidationResult } from './types';
-import { sizePatterns } from './presets/common';
+import { sizePatterns } from './common';
 
 /** Запрещённые символы в хештеге (кроме #, букв, цифр и _) */
 const FORBIDDEN_CHARS_REGEX = /[^a-zA-Zа-яА-ЯёЁ0-9_#]/;

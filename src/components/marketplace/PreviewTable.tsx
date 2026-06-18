@@ -19,7 +19,6 @@ import { Plus, ChevronUp, ChevronDown } from 'lucide-react';
 import { HashtagChips, CopyAllButton } from './HashtagChips';
 import { HashtagQualityScore } from './HashtagQualityScore';
 import { QuickSuggestions } from './QuickSuggestions';
-import type { Preset } from '@/lib/marketplace/types';
 
 interface PreviewTableProps {
   headers: string[];
@@ -45,8 +44,12 @@ interface PreviewTableProps {
   selectedRows?: Set<number>;
   /** Toggle row selection */
   onToggleRow?: (idx: number) => void;
-  /** Preset for quick suggestions */
-  preset?: Preset;
+  /** Selected Ozon category ID — for quick suggestions */
+  categoryId?: string;
+  /** Product type within the category */
+  productType?: string;
+  /** Custom keywords from the user */
+  customKeywords?: string[];
   /** Whether to show quick suggestions */
   showSuggestions?: boolean;
   /** Target hashtag count for display */
@@ -68,7 +71,9 @@ export function PreviewTable({
   selectable = false,
   selectedRows,
   onToggleRow,
-  preset,
+  categoryId,
+  productType,
+  customKeywords,
   showSuggestions = false,
   targetHashtagCount = 30,
 }: PreviewTableProps) {
@@ -214,10 +219,12 @@ export function PreviewTable({
                                       disabled={hashtagCount >= 30}
                                     />
                                   )}
-                                  {showSuggestions && preset && onAddHashtag && (
+                                  {showSuggestions && categoryId && onAddHashtag && (
                                     <QuickSuggestions
                                       currentHashtags={hashtagStr}
-                                      preset={preset}
+                                      categoryId={categoryId}
+                                      productType={productType}
+                                      customKeywords={customKeywords}
                                       productName={nameColumn ? String(row[nameColumn] || '') : ''}
                                       onAddSuggestion={(tag) => onAddHashtag(actualRowIdx, tag)}
                                       disabled={hashtagCount >= 30}
@@ -352,10 +359,12 @@ export function PreviewTable({
                         disabled={hashtagCount >= 30}
                       />
                     )}
-                    {showSuggestions && preset && onAddHashtag && (
+                    {showSuggestions && categoryId && onAddHashtag && (
                       <QuickSuggestions
                         currentHashtags={hashtagStr}
-                        preset={preset}
+                        categoryId={categoryId}
+                        productType={productType}
+                        customKeywords={customKeywords}
                         productName={nameValue || ''}
                         onAddSuggestion={(tag) => onAddHashtag(actualRowIdx, tag)}
                         disabled={hashtagCount >= 30}
