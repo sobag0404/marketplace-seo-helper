@@ -9,9 +9,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Sparkles, Hash, Tag, AlertCircle, Copy, Check, Layers } from 'lucide-react';
+import { Sparkles, Hash, Tag, AlertCircle, Copy, Check, Layers, Ban } from 'lucide-react';
 import { generateHashtagsFromCategory, generateHashtagsFromMultipleCategories, getCategoryGroup } from '@/lib/marketplace/categoryUtils';
 import type { OzonCategory } from '@/lib/marketplace/ozonCategories';
+import { useBlacklistSet, filterHashtagsByBlacklist } from './useHashtagBlacklist';
 
 interface LivePreviewProps {
   category: OzonCategory | null;
@@ -46,6 +47,7 @@ export function LivePreview({
   secondaryCategoryIds = [],
 }: LivePreviewProps) {
   const [copied, setCopied] = useState(false);
+  const blacklist = useBlacklistSet();
 
   const preview = useMemo(() => {
     if (!category) return null;
@@ -64,8 +66,30 @@ export function LivePreview({
           customKeywords,
           sampleName
         );
-    return allTags.slice(0, targetCount);
-  }, [category, productType, customKeywords, sampleName, targetCount, secondaryCategoryIds]);
+    const filtered = filterHashtagsByBlacklist(allTags, blacklist);
+    return filtered.slice(0, targetCount);
+  }, [category, productType, customKeywords, sampleName, targetCount, secondaryCategoryIds, blacklist]);
+
+  // Track how many tags were removed by the blacklist (for UI hint)
+  const blacklistedCount = useMemo(() => {
+    if (!category) return 0;
+    const allTags = secondaryCategoryIds.length > 0
+      ? generateHashtagsFromMultipleCategories(
+          category.id,
+          secondaryCategoryIds,
+          productType ?? undefined,
+          customKeywords,
+          sampleName
+        )
+      : generateHashtagsFromCategory(
+          category.id,
+          productType ?? undefined,
+          customKeywords,
+          sampleName
+        );
+    if (blacklist.size === 0) return 0;
+    return allTags.length - filterHashtagsByBlacklist(allTags, blacklist).length;
+  }, [category, productType, customKeywords, sampleName, secondaryCategoryIds, blacklist]);
 
   const handleCopy = useCallback(async () => {
     if (!preview || preview.length === 0) return;
@@ -125,6 +149,19 @@ export function LivePreview({
                 <Layers className="h-2.5 w-2.5" />
                 +{secondaryCategoryIds.length}
               </Badge>
+            )}
+            {blacklistedCount > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" className="text-[10px] border-rose-300 text-rose-600 dark:border-rose-700 dark:text-rose-400 bg-rose-50/60 dark:bg-rose-950/30 gap-0.5 cursor-help">
+                    <Ban className="h-2.5 w-2.5" />
+                    −{blacklistedCount}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Заблокировано стоп-листом: {blacklistedCount} шт.</p>
+                </TooltipContent>
+              </Tooltip>
             )}
             {preview && preview.length > 0 && (
               <Tooltip>

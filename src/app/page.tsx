@@ -7,7 +7,7 @@ import {
   CheckCircle2, Circle, Loader2, Moon, Sun,
   FileSpreadsheet, FileText, Pencil, PencilOff, Search,
   Undo2, Filter, Rows3, Zap, Keyboard, Eye, PencilLine,
-  Plus, Merge, Tag, Boxes, Star, Save, History, Layers
+  Plus, Merge, Tag, Boxes, Star, Save, History, Layers, Ban
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -42,6 +42,9 @@ import { useAutosaveSettings, useReadAutosave, clearAutosave } from '@/component
 import { LastSavedIndicator } from '@/components/marketplace/LastSavedIndicator';
 import { MultiCategorySelector } from '@/components/marketplace/MultiCategorySelector';
 import { UsageStatsMenu } from '@/components/marketplace/UsageStatsMenu';
+import { HashtagBlacklist } from '@/components/marketplace/HashtagBlacklist';
+import { useHashtagBlacklist, filterHashtagsByBlacklist } from '@/components/marketplace/useHashtagBlacklist';
+import { SuggestionKits } from '@/components/marketplace/SuggestionKits';
 
 import { parseExcelFile, createExcelWithHashtags, createCsvWithHashtags, resolveHashtagColumnName, getCellValue, getSheetNames } from '@/lib/marketplace/excel';
 import { DEFAULT_SETTINGS } from '@/lib/marketplace/hashtagGenerator';
@@ -145,8 +148,12 @@ export default function HomePage() {
   // — so reloading the page doesn't lose the chosen category / keywords / format.
   useEffect(() => {
     if (restoreAttemptedRef.current) return;
-    restoreAttemptedRef.current = true;
+    // Wait for hydration: useSyncExternalStore returns null on the server
+    // and on the first client render (hydration match). The actual data
+    // arrives on the second client render, so we must NOT mark the attempt
+    // as complete until we've actually seen a non-null autosaved value.
     if (!autosaved) return;
+    restoreAttemptedRef.current = true;
     // Only restore meaningful state — skip if schema is empty
     if (!autosaved.categoryId && autosaved.customKeywords.length === 0) return;
 
@@ -160,6 +167,14 @@ export default function HomePage() {
     setGenerationSettings(autosaved.generationSettings);
     setExportFormat(autosaved.exportFormat);
     setMergeOnRegen(autosaved.mergeOnRegen);
+    // Restore secondary categories (multi-category) — validated against the
+    // known list of Ozon category ids so stale entries from deleted categories
+    // don't sneak through.
+    const knownIds = new Set(OZON_CATEGORIES.map(c => c.id));
+    const validSecondary = (autosaved.secondaryCategoryIds ?? []).filter(id => knownIds.has(id));
+    if (validSecondary.length > 0) {
+      setSecondaryCategoryIds(validSecondary);
+    }
     // Note: selectedNameColumn/selectedArticleColumn are restored after file load
     // (they need headers to be meaningful, so we stash them via a ref below)
     pendingColumnsRef.current = {
@@ -169,7 +184,7 @@ export default function HomePage() {
 
     toast({
       title: 'Настройки восстановлены',
-      description: `${autosaved.categoryId ? 'категория + ' : ''}${autosaved.customKeywords.length} ключевиков • ${autosaved.exportFormat}`,
+      description: `${autosaved.categoryId ? 'категория + ' : ''}${autosaved.customKeywords.length} ключевиков${validSecondary.length > 0 ? ` • +${validSecondary.length} доп. кат.` : ''} • ${autosaved.exportFormat}`,
     });
   }, [autosaved, toast]);
 
@@ -295,6 +310,14 @@ export default function HomePage() {
     }
   }, [showError, toast]);
 
+  /** Hashtag blacklist (persistent in localStorage) — declared early so it can
+   *  be used inside handleGenerate's closure without TDZ issues. */
+  const blacklistEntries = useHashtagBlacklist();
+  const blacklistSet = useMemo(
+    () => new Set(blacklistEntries.map(e => e.tag)),
+    [blacklistEntries]
+  );
+
   const handleGenerate = useCallback(() => {
     if (!parseResult || !selectedNameColumn) return;
 
@@ -340,20 +363,32 @@ export default function HomePage() {
                     customKeywords,
                     nameValue
                   );
-              hashtags = rawTags.slice(0, generationSettings.targetHashtagCount || 30).join(' ');
+              // Apply blacklist filter (after generation, before slicing to targetCount)
+              const filteredTags = blacklistSet.size > 0
+                ? filterHashtagsByBlacklist(rawTags, blacklistSet)
+                : rawTags;
+              hashtags = filteredTags.slice(0, generationSettings.targetHashtagCount || 30).join(' ');
             } else {
               // No category selected — generate from custom keywords only
               const tags = customKeywords.map(kw =>
                 kw.startsWith('#') ? kw : '#' + kw.replace(/\s+/g, '').toLowerCase()
               ).filter(t => t.length > 2 && t.length <= 30);
-              hashtags = tags.join(' ');
+              const filteredTags = blacklistSet.size > 0
+                ? filterHashtagsByBlacklist(tags, blacklistSet)
+                : tags;
+              hashtags = filteredTags.join(' ');
             }
 
             // Merge with existing hashtags if mergeOnRegen is enabled
             if (mergeOnRegen && processedRows[idx]?.hashtags && hashtags) {
               const existingTags = processedRows[idx].hashtags!.split(' ').filter(t => t.trim());
               const newTags = hashtags.split(' ').filter(t => t.trim());
-              const merged = [...new Set([...existingTags, ...newTags])].slice(0, 30);
+              // Also filter the existing tags through the blacklist in case the
+              // user added new entries to the blacklist since the last generate.
+              const allTags = blacklistSet.size > 0
+                ? filterHashtagsByBlacklist([...existingTags, ...newTags], blacklistSet)
+                : [...existingTags, ...newTags];
+              const merged = [...new Set(allTags)].slice(0, 30);
               hashtags = merged.join(' ');
             }
 
@@ -402,7 +437,7 @@ export default function HomePage() {
         setIsProcessing(false);
       }
     }, 300);
-  }, [parseResult, selectedNameColumn, customKeywords, mergeOnRegen, processedRows, generationSettings, showError, toast, selectedOzonCategoryId, selectedProductType, secondaryCategoryIds]);
+  }, [parseResult, selectedNameColumn, customKeywords, mergeOnRegen, processedRows, generationSettings, showError, toast, selectedOzonCategoryId, selectedProductType, secondaryCategoryIds, blacklistSet]);
 
   // Keep ref in sync for keyboard shortcut usage
   generateRef.current = handleGenerate;
@@ -561,6 +596,10 @@ export default function HomePage() {
     handleExportFormatChange(preset.exportFormat);
     // Merge on regen
     setMergeOnRegen(preset.mergeOnRegen);
+    // Secondary categories (validated against known category ids)
+    const knownIds = new Set(OZON_CATEGORIES.map(c => c.id));
+    const validSecondary = (preset.secondaryCategoryIds ?? []).filter(id => knownIds.has(id));
+    setSecondaryCategoryIds(validSecondary);
   }, [recordRecentCategory, handleExportFormatChange]);
 
   const handleSheetChange = useCallback((sheet: string) => {
@@ -788,6 +827,27 @@ export default function HomePage() {
     return undefined;
   }, [parseResult, selectedNameColumn]);
 
+  /** Sample hashtags for the HashtagBlacklist "quick ban" suggestions —
+   *  mirrors LivePreview's preview logic but doesn't filter by blacklist */
+  const previewHashtagsForBlacklist = useMemo(() => {
+    if (!selectedOzonCategoryId) return [];
+    const tags = secondaryCategoryIds.length > 0
+      ? generateHashtagsFromMultipleCategories(
+          selectedOzonCategoryId,
+          secondaryCategoryIds,
+          selectedProductType ?? undefined,
+          customKeywords,
+          sampleProductName
+        )
+      : generateHashtagsFromCategory(
+          selectedOzonCategoryId,
+          selectedProductType ?? undefined,
+          customKeywords,
+          sampleProductName
+        );
+    return tags.slice(0, 15);
+  }, [selectedOzonCategoryId, secondaryCategoryIds, selectedProductType, customKeywords, sampleProductName]);
+
   const processedRowIndices = useMemo(() => {
     // When search is active, we need to map filtered indices back to processedRows
     if (searchQuery.trim() && currentStep === 'done') {
@@ -816,6 +876,7 @@ export default function HomePage() {
     mergeOnRegen,
     selectedNameColumn,
     selectedArticleColumn,
+    secondaryCategoryIds,
     enabled: currentStep !== 'upload',
   });
 
@@ -1058,7 +1119,7 @@ export default function HomePage() {
                           { num: '614', label: 'категорий Ozon', icon: Tag },
                           { num: '9 328', label: 'типов товаров', icon: Boxes },
                           { num: '9', label: 'форматов экспорта', icon: FileSpreadsheet },
-                          { num: '100%', label: 'в браузере, без сервера', icon: Shield },
+                          { num: '8', label: 'готовых наборов хештегов', icon: Zap },
                         ].map((stat, i) => {
                           const StatIcon = stat.icon;
                           return (
@@ -1143,6 +1204,7 @@ export default function HomePage() {
                         generationSettings={generationSettings}
                         exportFormat={exportFormat}
                         mergeOnRegen={mergeOnRegen}
+                        secondaryCategoryIds={secondaryCategoryIds}
                         onImport={handleImportSettings}
                         onToast={(title, description, variant) => toast({ title, description, variant })}
                       />
@@ -1217,6 +1279,12 @@ export default function HomePage() {
                     secondaryCategoryIds={secondaryCategoryIds}
                   />
 
+                  {/* Hashtag blacklist — exclude unwanted tags from generation */}
+                  <HashtagBlacklist
+                    recentHashtags={previewHashtagsForBlacklist}
+                    onToast={(title, description, variant) => toast({ title, description, variant })}
+                  />
+
                   {/* Sheet selector (only for multi-sheet files) */}
                   <SheetSelector
                     sheetNames={sheetNames}
@@ -1250,6 +1318,12 @@ export default function HomePage() {
                   <CustomKeywordsInput
                     keywords={customKeywords}
                     onKeywordsChange={setCustomKeywords}
+                  />
+
+                  {/* Suggestion kits — quick-add curated hashtag bundles */}
+                  <SuggestionKits
+                    currentKeywords={customKeywords}
+                    onAddKeywords={(newKeywords) => setCustomKeywords(newKeywords)}
                   />
 
                   <Separator />
@@ -1593,10 +1667,13 @@ export default function HomePage() {
                   'Настройте минимум/максимум хештегов (по умолчанию 10–30)',
                   'Включите русский приоритет и смежные категории',
                   'Добавьте свои ключевые слова при необходимости',
+                  'Используйте готовые наборы хештегов (распродажа, эко, подарок и др.)',
+                  'Добавьте нежелательные теги в «Стоп-лист» — они не появятся в результате',
                   'В предпросмотре хештегов нажмите «Копировать» для быстрого копирования',
                   'Сохраните настройки в JSON («Настройки» → «Сохранить») для повторного использования',
                   'Загрузите настройки из JSON для нового файла без перенастройки',
                   'Настройки автосохраняются в браузере — после reload вы вернётесь туда же',
+                  'Доп. категории также сохраняются в autosave и пресетах JSON',
                   'Счётчик использований показывает самые частые категории (фиолетовые чипы «Частые»)',
                   'Экспорт статистики в JSON через меню «Статистика» в шапке карточки настроек',
                   'Время последнего сохранения видно в футере (зелёный индикатор)',
@@ -1626,6 +1703,9 @@ export default function HomePage() {
                   'Морфологическая дедупликация: #плед и #пледы не дублируются',
                   'Минимум 10 хештегов — настраиваемый (от 1 до 30)',
                   'При минимуме 1 — выбирается самый популярный хештег',
+                  'Стоп-лист: добавьте тег → он больше не появится в генерации',
+                  'Стоп-лист хранится в браузере и применяется автоматически',
+                  'Готовые наборы: распродажа, новинки, эко, премиум, уют и др.',
                   'Можно удалить ненужные хештеги перед экспортом',
                   'Двойной клик на хештег — редактирование',
                   'Отмена изменений: Ctrl+Z или кнопка ↩ в шапке',
@@ -1696,7 +1776,7 @@ export default function HomePage() {
                 <div className="flex flex-col">
                   <span className="text-xs font-semibold text-foreground leading-tight flex items-center gap-1.5">
                     Marketplace SEO Helper
-                    <span className="text-[9px] px-1 py-0 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 font-mono">v13</span>
+                    <span className="text-[9px] px-1 py-0 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 font-mono">v14</span>
                   </span>
                   <span className="text-[10px] text-muted-foreground/70">
                     генератор хештегов для Ozon, WB и соцсетей
@@ -1729,6 +1809,14 @@ export default function HomePage() {
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-violet-200/60 text-violet-600/80 dark:border-violet-800/60 dark:text-violet-400/80 hover:bg-violet-50/50 dark:hover:bg-violet-950/20 transition-colors">
                   <Layers className="h-2.5 w-2.5 mr-0.5" />
                   Мульти-категории
+                </Badge>
+                <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-rose-200/60 text-rose-600/80 dark:border-rose-800/60 dark:text-rose-400/80 hover:bg-rose-50/50 dark:hover:bg-rose-950/20 transition-colors">
+                  <Ban className="h-2.5 w-2.5 mr-0.5" />
+                  Стоп-лист
+                </Badge>
+                <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-amber-200/60 text-amber-600/80 dark:border-amber-800/60 dark:text-amber-400/80 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors">
+                  <Zap className="h-2.5 w-2.5 mr-0.5" />
+                  Наборы хештегов
                 </Badge>
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-amber-200/60 text-amber-600/80 dark:border-amber-800/60 dark:text-amber-400/80 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors">
                   <Zap className="h-2.5 w-2.5 mr-0.5" />

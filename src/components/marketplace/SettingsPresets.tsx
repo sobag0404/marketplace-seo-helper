@@ -36,6 +36,8 @@ export interface SettingsPreset {
   exportFormat: ExportFormat;
   /** Merge-on-regen flag */
   mergeOnRegen: boolean;
+  /** Secondary categories merged with primary (multi-category feature) */
+  secondaryCategoryIds: string[];
 }
 
 interface SettingsPresetsProps {
@@ -45,6 +47,7 @@ interface SettingsPresetsProps {
   generationSettings: GenerationSettings;
   exportFormat: ExportFormat;
   mergeOnRegen: boolean;
+  secondaryCategoryIds: string[];
   onImport: (preset: SettingsPreset) => void;
   onToast: (title: string, description: string, variant?: 'default' | 'destructive') => void;
 }
@@ -65,6 +68,7 @@ export function SettingsPresets({
   generationSettings,
   exportFormat,
   mergeOnRegen,
+  secondaryCategoryIds,
   onImport,
   onToast,
 }: SettingsPresetsProps) {
@@ -82,8 +86,9 @@ export function SettingsPresets({
       generationSettings,
       exportFormat,
       mergeOnRegen,
+      secondaryCategoryIds,
     };
-  }, [categoryId, productType, customKeywords, generationSettings, exportFormat, mergeOnRegen]);
+  }, [categoryId, productType, customKeywords, generationSettings, exportFormat, mergeOnRegen, secondaryCategoryIds]);
 
   const handleSave = useCallback(() => {
     const preset = buildPreset();
@@ -132,11 +137,14 @@ export function SettingsPresets({
           generationSettings: parsed.generationSettings as GenerationSettings,
           exportFormat: parsed.exportFormat as ExportFormat,
           mergeOnRegen: Boolean(parsed.mergeOnRegen),
+          secondaryCategoryIds: Array.isArray(parsed.secondaryCategoryIds)
+            ? parsed.secondaryCategoryIds.filter((x: unknown): x is string => typeof x === 'string').slice(0, 5)
+            : [],
         });
         setLastAction('load');
         onToast(
           'Настройки загружены',
-          `${file.name} • категория: ${parsed.categoryId ?? '—'} • ${parsed.customKeywords?.length ?? 0} ключевиков`
+          `${file.name} • категория: ${parsed.categoryId ?? '—'} • ${parsed.customKeywords?.length ?? 0} ключевиков${parsed.secondaryCategoryIds?.length ? ` • +${parsed.secondaryCategoryIds.length} доп. кат.` : ''}`
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Не удалось прочитать файл';

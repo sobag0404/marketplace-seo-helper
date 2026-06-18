@@ -29,6 +29,8 @@ export interface PersistedSettings {
   selectedNameColumn: string;
   /** Article column override */
   selectedArticleColumn: string;
+  /** Secondary categories merged with primary (multi-category feature) */
+  secondaryCategoryIds: string[];
 }
 
 const STORAGE_KEY = 'msh-autosave-settings';
@@ -52,6 +54,7 @@ const EMPTY_SETTINGS: PersistedSettings = {
   mergeOnRegen: false,
   selectedNameColumn: '',
   selectedArticleColumn: '',
+  secondaryCategoryIds: [],
 };
 
 let cachedRaw: string | null | undefined = undefined;
@@ -74,6 +77,9 @@ function parse(raw: string | null): PersistedSettings | null {
       mergeOnRegen: Boolean(parsed.mergeOnRegen),
       selectedNameColumn: typeof parsed.selectedNameColumn === 'string' ? parsed.selectedNameColumn : '',
       selectedArticleColumn: typeof parsed.selectedArticleColumn === 'string' ? parsed.selectedArticleColumn : '',
+      secondaryCategoryIds: Array.isArray(parsed.secondaryCategoryIds)
+        ? parsed.secondaryCategoryIds.filter((x: unknown): x is string => typeof x === 'string').slice(0, 5)
+        : [],
     };
   } catch {
     return null;
@@ -147,6 +153,8 @@ interface UseAutosaveArgs {
   mergeOnRegen: boolean;
   selectedNameColumn: string;
   selectedArticleColumn: string;
+  /** Secondary categories merged with primary (multi-category feature) */
+  secondaryCategoryIds: string[];
   /** Disable autosave (e.g. on upload step where settings aren't yet meaningful) */
   enabled: boolean;
 }
@@ -166,14 +174,15 @@ export function useAutosaveSettings({
   mergeOnRegen,
   selectedNameColumn,
   selectedArticleColumn,
+  secondaryCategoryIds,
   enabled,
 }: UseAutosaveArgs) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep latest values in a ref so the effect doesn't re-run on every change
-  const valuesRef = useRef({ categoryId, productType, customKeywords, generationSettings, exportFormat, mergeOnRegen, selectedNameColumn, selectedArticleColumn, enabled });
+  const valuesRef = useRef({ categoryId, productType, customKeywords, generationSettings, exportFormat, mergeOnRegen, selectedNameColumn, selectedArticleColumn, secondaryCategoryIds, enabled });
   useEffect(() => {
-    valuesRef.current = { categoryId, productType, customKeywords, generationSettings, exportFormat, mergeOnRegen, selectedNameColumn, selectedArticleColumn, enabled };
+    valuesRef.current = { categoryId, productType, customKeywords, generationSettings, exportFormat, mergeOnRegen, selectedNameColumn, selectedArticleColumn, secondaryCategoryIds, enabled };
   });
 
   useEffect(() => {
@@ -196,13 +205,14 @@ export function useAutosaveSettings({
         mergeOnRegen: v.mergeOnRegen,
         selectedNameColumn: v.selectedNameColumn,
         selectedArticleColumn: v.selectedArticleColumn,
+        secondaryCategoryIds: v.secondaryCategoryIds.slice(0, 5),
       };
       save(snapshot);
     }, DEBOUNCE_MS);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [categoryId, productType, customKeywords, generationSettings, exportFormat, mergeOnRegen, selectedNameColumn, selectedArticleColumn, enabled]);
+  }, [categoryId, productType, customKeywords, generationSettings, exportFormat, mergeOnRegen, selectedNameColumn, selectedArticleColumn, secondaryCategoryIds, enabled]);
 }
 
 /** Clear the autosaved settings (e.g. on full reset) */
