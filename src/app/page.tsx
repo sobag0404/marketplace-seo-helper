@@ -7,7 +7,7 @@ import {
   CheckCircle2, Circle, Loader2, Moon, Sun,
   FileSpreadsheet, FileText, Pencil, PencilOff, Search,
   Undo2, Filter, Rows3, Zap, Keyboard, Eye, PencilLine,
-  Plus, Merge, Tag, Boxes, Star, Save
+  Plus, Merge, Tag, Boxes, Star, Save, History
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -38,6 +38,7 @@ import { HashtagCloud } from '@/components/marketplace/HashtagCloud';
 import { BulkCopyButton } from '@/components/marketplace/BulkCopyButton';
 import { HashtagsOnlyExport } from '@/components/marketplace/HashtagsOnlyExport';
 import { SettingsPresets, type SettingsPreset } from '@/components/marketplace/SettingsPresets';
+import { useAutosaveSettings, useReadAutosave, clearAutosave } from '@/components/marketplace/useAutosaveSettings';
 
 import { parseExcelFile, createExcelWithHashtags, createCsvWithHashtags, resolveHashtagColumnName, getCellValue, getSheetNames } from '@/lib/marketplace/excel';
 import { DEFAULT_SETTINGS } from '@/lib/marketplace/hashtagGenerator';
@@ -121,6 +122,11 @@ export default function HomePage() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const generateRef = useRef<() => void>(() => {});
 
+  /** Read any previously autosaved settings (null if none) */
+  const autosaved = useReadAutosave();
+  /** Track whether we've already attempted the restore-on-mount */
+  const restoreAttemptedRef = useRef(false);
+
   // Persist dark mode in localStorage
   useEffect(() => {
     const saved = localStorage.getItem('darkMode');
@@ -129,6 +135,41 @@ export default function HomePage() {
       document.documentElement.classList.add('dark');
     }
   }, []);
+
+  // Restore autosaved settings ONCE on mount (when user lands on upload step)
+  // — so reloading the page doesn't lose the chosen category / keywords / format.
+  useEffect(() => {
+    if (restoreAttemptedRef.current) return;
+    restoreAttemptedRef.current = true;
+    if (!autosaved) return;
+    // Only restore meaningful state — skip if schema is empty
+    if (!autosaved.categoryId && autosaved.customKeywords.length === 0) return;
+
+    if (autosaved.categoryId) {
+      const cat = OZON_CATEGORIES.find(c => c.id === autosaved.categoryId) ?? null;
+      setSelectedOzonCategoryId(autosaved.categoryId);
+      setSelectedOzonCategory(cat);
+    }
+    setSelectedProductType(autosaved.productType);
+    setCustomKeywords(autosaved.customKeywords);
+    setGenerationSettings(autosaved.generationSettings);
+    setExportFormat(autosaved.exportFormat);
+    setMergeOnRegen(autosaved.mergeOnRegen);
+    // Note: selectedNameColumn/selectedArticleColumn are restored after file load
+    // (they need headers to be meaningful, so we stash them via a ref below)
+    pendingColumnsRef.current = {
+      name: autosaved.selectedNameColumn,
+      article: autosaved.selectedArticleColumn,
+    };
+
+    toast({
+      title: 'Настройки восстановлены',
+      description: `${autosaved.categoryId ? 'категория + ' : ''}${autosaved.customKeywords.length} ключевиков • ${autosaved.exportFormat}`,
+    });
+  }, [autosaved, toast]);
+
+  /** Pending column overrides to apply after file loads (from autosave) */
+  const pendingColumnsRef = useRef<{ name: string; article: string }>({ name: '', article: '' });
 
   // Keyboard shortcuts: Ctrl+Z for undo, Ctrl+F for search, Ctrl+G for generate
   useEffect(() => {
@@ -210,16 +251,28 @@ export default function HomePage() {
       const result = parseExcelFile(buffer, name, defaultSheet);
       setParseResult(result);
 
-      const nameCol = result.detectedNameColumn !== null
+      // Auto-detect columns, but override with pending autosave values if they exist
+      // and are present in the new file's headers
+      const detectedName = result.detectedNameColumn !== null
         ? result.headers[result.detectedNameColumn]
         : result.headers[0] || '';
+      const pendingName = pendingColumnsRef.current.name;
+      const nameCol = pendingName && result.headers.includes(pendingName)
+        ? pendingName
+        : detectedName;
       setSelectedNameColumn(nameCol);
 
-      if (result.detectedArticleColumn !== null) {
-        setSelectedArticleColumn(result.headers[result.detectedArticleColumn]);
-      } else {
-        setSelectedArticleColumn('');
-      }
+      const detectedArticle = result.detectedArticleColumn !== null
+        ? result.headers[result.detectedArticleColumn]
+        : '';
+      const pendingArticle = pendingColumnsRef.current.article;
+      const articleCol = pendingArticle && result.headers.includes(pendingArticle)
+        ? pendingArticle
+        : detectedArticle;
+      setSelectedArticleColumn(articleCol);
+
+      // Clear pending overrides after applying
+      pendingColumnsRef.current = { name: '', article: '' };
 
       setCurrentStep('configure');
       setIsEditMode(false);
@@ -466,6 +519,8 @@ export default function HomePage() {
     setMergeOnRegen(false);
     setGenerationSettings(DEFAULT_SETTINGS);
     setShowGenSettings(false);
+    // Clear autosaved settings on full reset so reload doesn't bring them back
+    clearAutosave();
   }, []);
 
   /** Import settings from a previously saved JSON preset */
@@ -734,6 +789,20 @@ export default function HomePage() {
   }, [processedRows, searchQuery, currentStep]);
 
   const currentStepIdx = getStepIndex(currentStep);
+
+  // Debounced autosave of generator settings to localStorage.
+  // Skipped on the upload step where no file is loaded yet.
+  useAutosaveSettings({
+    categoryId: selectedOzonCategoryId,
+    productType: selectedProductType,
+    customKeywords,
+    generationSettings,
+    exportFormat,
+    mergeOnRegen,
+    selectedNameColumn,
+    selectedArticleColumn,
+    enabled: currentStep !== 'upload',
+  });
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -1490,6 +1559,7 @@ export default function HomePage() {
                   'В предпросмотре хештегов нажмите «Копировать» для быстрого копирования',
                   'Сохраните настройки в JSON («Настройки» → «Сохранить») для повторного использования',
                   'Загрузите настройки из JSON для нового файла без перенастройки',
+                  'Настройки автосохраняются в браузере — после reload вы вернётесь туда же',
                   'Выберите колонку с наименованием (определяется автоматически)',
                   'Нажмите «Сгенерировать хештеги»',
                   'Отредактируйте результат при необходимости (Ctrl+Z для отмены)',
@@ -1586,7 +1656,7 @@ export default function HomePage() {
                 <div className="flex flex-col">
                   <span className="text-xs font-semibold text-foreground leading-tight flex items-center gap-1.5">
                     Marketplace SEO Helper
-                    <span className="text-[9px] px-1 py-0 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 font-mono">v10</span>
+                    <span className="text-[9px] px-1 py-0 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 font-mono">v11</span>
                   </span>
                   <span className="text-[10px] text-muted-foreground/70">
                     генератор хештегов для Ozon, WB и соцсетей
@@ -1611,6 +1681,10 @@ export default function HomePage() {
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-violet-200/60 text-violet-600/80 dark:border-violet-800/60 dark:text-violet-400/80 hover:bg-violet-50/50 dark:hover:bg-violet-950/20 transition-colors">
                   <Save className="h-2.5 w-2.5 mr-0.5" />
                   Импорт настроек
+                </Badge>
+                <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-teal-200/60 text-teal-600/80 dark:border-teal-800/60 dark:text-teal-400/80 hover:bg-teal-50/50 dark:hover:bg-teal-950/20 transition-colors">
+                  <History className="h-2.5 w-2.5 mr-0.5" />
+                  Автосохранение
                 </Badge>
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-amber-200/60 text-amber-600/80 dark:border-amber-800/60 dark:text-amber-400/80 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors">
                   <Zap className="h-2.5 w-2.5 mr-0.5" />
