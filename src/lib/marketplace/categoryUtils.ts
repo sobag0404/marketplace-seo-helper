@@ -212,6 +212,75 @@ export function generateHashtagsFromCategory(
   return rankHashtags(deduped).slice(0, 30);
 }
 
+/**
+ * Generate hashtags by merging multiple categories.
+ * The primary category is generated in full (including product name extraction
+ * and custom keywords), while secondary categories contribute their category-name
+ * tags and semantic-group base hashtags only (no product-name extraction — that
+ * would be misleading for products from a different category).
+ *
+ * Use case: a seller with mixed products (e.g. «Пледы» + «Постельное белье»)
+ * wants hashtags from both categories to appear for each product.
+ *
+ * @param primaryCategoryId  The main category (full generation)
+ * @param secondaryCategoryIds  Additional categories (name + group hashtags only)
+ * @param productType  Product type within the primary category
+ * @param customKeywords  Free-form keywords
+ * @param productName  Product name (only used for primary category)
+ */
+export function generateHashtagsFromMultipleCategories(
+  primaryCategoryId: string,
+  secondaryCategoryIds: string[],
+  productType?: string,
+  customKeywords: string[] = [],
+  productName?: string
+): string[] {
+  // Primary category: full generation
+  const primaryTags = generateHashtagsFromCategory(
+    primaryCategoryId,
+    productType,
+    customKeywords,
+    productName
+  );
+
+  if (secondaryCategoryIds.length === 0) {
+    return primaryTags;
+  }
+
+  // Secondary categories: only name + group base hashtags (no product name, no custom keywords)
+  const secondaryTags: string[] = [];
+  for (const secId of secondaryCategoryIds) {
+    if (secId === primaryCategoryId) continue; // skip duplicates of primary
+    const secCat = findCategoryById(secId);
+    if (!secCat) continue;
+
+    // Category name → hashtags
+    const catWords = secCat.name
+      .replace(/[,.\-()]/g, ' ')
+      .split(/\s+/)
+      .filter(w => w.length > 2 && !['для', 'или', 'при', 'над', 'под'].includes(w.toLowerCase()));
+    catWords.forEach(word => {
+      const tag = '#' + word.toLowerCase().replace(/[^a-zа-яё0-9]/gi, '');
+      if (tag.length > 2 && tag.length <= 30 && !secondaryTags.includes(tag)) {
+        secondaryTags.push(tag);
+      }
+    });
+
+    // Semantic group base hashtags
+    const groupHashtags = getGroupBaseHashtags(secCat.semanticGroup);
+    groupHashtags.forEach(tag => {
+      const formatted = tag.startsWith('#') ? tag : '#' + tag;
+      if (!secondaryTags.includes(formatted)) {
+        secondaryTags.push(formatted);
+      }
+    });
+  }
+
+  // Merge: primary first, then secondary (deduplicated, ranked, capped)
+  const merged = dedupHashtagsMorphological([...primaryTags, ...secondaryTags]);
+  return rankHashtags(merged).slice(0, 30);
+}
+
 /** Forbidden words that shouldn't become hashtags */
 const FORBIDDEN_WORDS = new Set([
   'для', 'или', 'при', 'над', 'под', 'без', 'про', 'через', 'между',

@@ -9,8 +9,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Sparkles, Hash, Tag, AlertCircle, Copy, Check } from 'lucide-react';
-import { generateHashtagsFromCategory, getCategoryGroup } from '@/lib/marketplace/categoryUtils';
+import { Sparkles, Hash, Tag, AlertCircle, Copy, Check, Layers } from 'lucide-react';
+import { generateHashtagsFromCategory, generateHashtagsFromMultipleCategories, getCategoryGroup } from '@/lib/marketplace/categoryUtils';
 import type { OzonCategory } from '@/lib/marketplace/ozonCategories';
 
 interface LivePreviewProps {
@@ -20,6 +20,8 @@ interface LivePreviewProps {
   targetCount: number;
   /** Sample product name (from first data row if available) */
   sampleName?: string;
+  /** Secondary categories whose hashtags are merged with the primary category */
+  secondaryCategoryIds?: string[];
 }
 
 /**
@@ -30,6 +32,7 @@ interface LivePreviewProps {
  * Includes:
  *  - Tag count badge
  *  - Semantic group label
+ *  - Multi-category indicator (Layers icon) when secondary categories are selected
  *  - Copy-to-clipboard button (one click → all preview tags)
  *  - Staggered tag-enter animation
  *  - 3-tier color highlight (top-3 teal, 4-6 emerald, rest muted)
@@ -40,21 +43,29 @@ export function LivePreview({
   customKeywords,
   targetCount,
   sampleName,
+  secondaryCategoryIds = [],
 }: LivePreviewProps) {
   const [copied, setCopied] = useState(false);
 
   const preview = useMemo(() => {
     if (!category) return null;
 
-    const tags = generateHashtagsFromCategory(
-      category.id,
-      productType ?? undefined,
-      customKeywords,
-      sampleName
-    ).slice(0, targetCount);
-
-    return tags;
-  }, [category, productType, customKeywords, sampleName, targetCount]);
+    const allTags = secondaryCategoryIds.length > 0
+      ? generateHashtagsFromMultipleCategories(
+          category.id,
+          secondaryCategoryIds,
+          productType ?? undefined,
+          customKeywords,
+          sampleName
+        )
+      : generateHashtagsFromCategory(
+          category.id,
+          productType ?? undefined,
+          customKeywords,
+          sampleName
+        );
+    return allTags.slice(0, targetCount);
+  }, [category, productType, customKeywords, sampleName, targetCount, secondaryCategoryIds]);
 
   const handleCopy = useCallback(async () => {
     if (!preview || preview.length === 0) return;
@@ -109,6 +120,12 @@ export function LivePreview({
                 {group ? `${group.emoji} ${group.name}` : category.name}
               </span>
             </div>
+            {secondaryCategoryIds.length > 0 && (
+              <Badge variant="outline" className="text-[10px] border-violet-300 text-violet-600 dark:border-violet-700 dark:text-violet-400 bg-violet-50/60 dark:bg-violet-950/30 gap-0.5">
+                <Layers className="h-2.5 w-2.5" />
+                +{secondaryCategoryIds.length}
+              </Badge>
+            )}
             {preview && preview.length > 0 && (
               <Tooltip>
                 <TooltipTrigger asChild>

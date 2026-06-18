@@ -7,7 +7,7 @@ import {
   CheckCircle2, Circle, Loader2, Moon, Sun,
   FileSpreadsheet, FileText, Pencil, PencilOff, Search,
   Undo2, Filter, Rows3, Zap, Keyboard, Eye, PencilLine,
-  Plus, Merge, Tag, Boxes, Star, Save, History
+  Plus, Merge, Tag, Boxes, Star, Save, History, Layers
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -40,12 +40,14 @@ import { HashtagsOnlyExport } from '@/components/marketplace/HashtagsOnlyExport'
 import { SettingsPresets, type SettingsPreset } from '@/components/marketplace/SettingsPresets';
 import { useAutosaveSettings, useReadAutosave, clearAutosave } from '@/components/marketplace/useAutosaveSettings';
 import { LastSavedIndicator } from '@/components/marketplace/LastSavedIndicator';
+import { MultiCategorySelector } from '@/components/marketplace/MultiCategorySelector';
+import { UsageStatsMenu } from '@/components/marketplace/UsageStatsMenu';
 
 import { parseExcelFile, createExcelWithHashtags, createCsvWithHashtags, resolveHashtagColumnName, getCellValue, getSheetNames } from '@/lib/marketplace/excel';
 import { DEFAULT_SETTINGS } from '@/lib/marketplace/hashtagGenerator';
 import type { ParseResult, TableRow, ProcessingStats as Stats, GenerationSettings } from '@/lib/marketplace/types';
 import { OZON_CATEGORIES, OzonCategory } from '@/lib/marketplace/ozonCategories';
-import { generateHashtagsFromCategory, getCategoryGroup, getAdjacentCategories, getCategoryGroupHashtags } from '@/lib/marketplace/categoryUtils';
+import { generateHashtagsFromCategory, generateHashtagsFromMultipleCategories, getCategoryGroup, getAdjacentCategories, getCategoryGroupHashtags } from '@/lib/marketplace/categoryUtils';
 import { GenerationSettingsPanel } from '@/components/marketplace/GenerationSettingsPanel';
 
 type Step = 'upload' | 'configure' | 'process' | 'done';
@@ -86,9 +88,10 @@ export default function HomePage() {
   const [selectedOzonCategory, setSelectedOzonCategory] = useState<OzonCategory | null>(null);
   const [selectedOzonCategoryId, setSelectedOzonCategoryId] = useState<string | null>(null);
   const [selectedProductType, setSelectedProductType] = useState<string | null>(null);
+  const [secondaryCategoryIds, setSecondaryCategoryIds] = useState<string[]>([]);
   const { recent: recentCategories, record: recordRecentCategory, clear: clearRecentCategories } = useRecentCategories();
   const { favorites: favoriteCategories, toggle: toggleFavoriteCategory } = useCategoryFavorites();
-  const { usage: categoryUsage, recordUse: recordCategoryUsage } = useCategoryUsage();
+  const { usage: categoryUsage, recordUse: recordCategoryUsage, clear: clearCategoryUsage } = useCategoryUsage();
   const [isDark, setIsDark] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [customKeywords, setCustomKeywords] = useState<string[]>([]);
@@ -321,13 +324,22 @@ export default function HomePage() {
             let hashtags: string;
 
             if (selectedOzonCategoryId) {
-              // Ozon category mode — generate from category + product type + custom keywords
-              const rawTags = generateHashtagsFromCategory(
-                selectedOzonCategoryId,
-                selectedProductType ?? undefined,
-                customKeywords,
-                nameValue
-              );
+              // Ozon category mode — generate from category + (optional secondary categories)
+              // + product type + custom keywords
+              const rawTags = secondaryCategoryIds.length > 0
+                ? generateHashtagsFromMultipleCategories(
+                    selectedOzonCategoryId,
+                    secondaryCategoryIds,
+                    selectedProductType ?? undefined,
+                    customKeywords,
+                    nameValue
+                  )
+                : generateHashtagsFromCategory(
+                    selectedOzonCategoryId,
+                    selectedProductType ?? undefined,
+                    customKeywords,
+                    nameValue
+                  );
               hashtags = rawTags.slice(0, generationSettings.targetHashtagCount || 30).join(' ');
             } else {
               // No category selected — generate from custom keywords only
@@ -390,7 +402,7 @@ export default function HomePage() {
         setIsProcessing(false);
       }
     }, 300);
-  }, [parseResult, selectedNameColumn, customKeywords, mergeOnRegen, processedRows, generationSettings, showError, toast, selectedOzonCategoryId, selectedProductType]);
+  }, [parseResult, selectedNameColumn, customKeywords, mergeOnRegen, processedRows, generationSettings, showError, toast, selectedOzonCategoryId, selectedProductType, secondaryCategoryIds]);
 
   // Keep ref in sync for keyboard shortcut usage
   generateRef.current = handleGenerate;
@@ -521,6 +533,7 @@ export default function HomePage() {
     setMergeOnRegen(false);
     setGenerationSettings(DEFAULT_SETTINGS);
     setShowGenSettings(false);
+    setSecondaryCategoryIds([]);
     // Clear autosaved settings on full reset so reload doesn't bring them back
     clearAutosave();
   }, []);
@@ -1133,6 +1146,12 @@ export default function HomePage() {
                         onImport={handleImportSettings}
                         onToast={(title, description, variant) => toast({ title, description, variant })}
                       />
+                      <span>•</span>
+                      <UsageStatsMenu
+                        usage={categoryUsage}
+                        onClear={clearCategoryUsage}
+                        onToast={(title, description, variant) => toast({ title, description, variant })}
+                      />
                     </div>
                   </div>
                 </CardHeader>
@@ -1147,6 +1166,7 @@ export default function HomePage() {
                       setSelectedOzonCategoryId(id);
                       setSelectedOzonCategory(cat);
                       setSelectedProductType(null);
+                      setSecondaryCategoryIds([]);
                       recordRecentCategory(id);
                       recordCategoryUsage(id);
                     }}
@@ -1161,6 +1181,7 @@ export default function HomePage() {
                       setSelectedOzonCategoryId(id);
                       setSelectedOzonCategory(cat);
                       setSelectedProductType(null);
+                      setSecondaryCategoryIds([]);
                       recordRecentCategory(id);
                       recordCategoryUsage(id);
                     }}
@@ -1177,6 +1198,15 @@ export default function HomePage() {
                     />
                   )}
 
+                  {/* Multi-category selector — merge hashtags from 2-3 additional categories */}
+                  {selectedOzonCategory && (
+                    <MultiCategorySelector
+                      selectedCategoryIds={secondaryCategoryIds}
+                      onChange={setSecondaryCategoryIds}
+                      maxSecondary={3}
+                    />
+                  )}
+
                   {/* Live preview — sample hashtags from current settings */}
                   <LivePreview
                     category={selectedOzonCategory}
@@ -1184,6 +1214,7 @@ export default function HomePage() {
                     customKeywords={customKeywords}
                     targetCount={generationSettings.targetHashtagCount}
                     sampleName={sampleProductName}
+                    secondaryCategoryIds={secondaryCategoryIds}
                   />
 
                   {/* Sheet selector (only for multi-sheet files) */}
@@ -1558,6 +1589,7 @@ export default function HomePage() {
                   'Выберите лист таблицы (для многостраничных Excel)',
                   'Выберите категорию Ozon из 614 категорий с поиском',
                   'Уточните тип товара внутри категории (9 328 типов)',
+                  'Добавьте 1-3 доп. категории — их хештеги объединятся с основной',
                   'Настройте минимум/максимум хештегов (по умолчанию 10–30)',
                   'Включите русский приоритет и смежные категории',
                   'Добавьте свои ключевые слова при необходимости',
@@ -1566,6 +1598,7 @@ export default function HomePage() {
                   'Загрузите настройки из JSON для нового файла без перенастройки',
                   'Настройки автосохраняются в браузере — после reload вы вернётесь туда же',
                   'Счётчик использований показывает самые частые категории (фиолетовые чипы «Частые»)',
+                  'Экспорт статистики в JSON через меню «Статистика» в шапке карточки настроек',
                   'Время последнего сохранения видно в футере (зелёный индикатор)',
                   'Выберите колонку с наименованием (определяется автоматически)',
                   'Нажмите «Сгенерировать хештеги»',
@@ -1663,7 +1696,7 @@ export default function HomePage() {
                 <div className="flex flex-col">
                   <span className="text-xs font-semibold text-foreground leading-tight flex items-center gap-1.5">
                     Marketplace SEO Helper
-                    <span className="text-[9px] px-1 py-0 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 font-mono">v12</span>
+                    <span className="text-[9px] px-1 py-0 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 font-mono">v13</span>
                   </span>
                   <span className="text-[10px] text-muted-foreground/70">
                     генератор хештегов для Ozon, WB и соцсетей
@@ -1692,6 +1725,10 @@ export default function HomePage() {
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-teal-200/60 text-teal-600/80 dark:border-teal-800/60 dark:text-teal-400/80 hover:bg-teal-50/50 dark:hover:bg-teal-950/20 transition-colors">
                   <History className="h-2.5 w-2.5 mr-0.5" />
                   Автосохранение
+                </Badge>
+                <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-violet-200/60 text-violet-600/80 dark:border-violet-800/60 dark:text-violet-400/80 hover:bg-violet-50/50 dark:hover:bg-violet-950/20 transition-colors">
+                  <Layers className="h-2.5 w-2.5 mr-0.5" />
+                  Мульти-категории
                 </Badge>
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-amber-200/60 text-amber-600/80 dark:border-amber-800/60 dark:text-amber-400/80 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors">
                   <Zap className="h-2.5 w-2.5 mr-0.5" />
