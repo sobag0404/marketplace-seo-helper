@@ -7,7 +7,7 @@ import {
   CheckCircle2, Circle, Loader2, Moon, Sun,
   FileSpreadsheet, FileText, Pencil, PencilOff, Search,
   Undo2, Filter, Rows3, Zap, Keyboard, Eye, PencilLine,
-  Plus, Merge, Tag, Boxes, Star
+  Plus, Merge, Tag, Boxes, Star, Save
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -37,6 +37,7 @@ import { ExportFormatSelector, formatHashtagsForExport, FORMAT_LIMITS, type Expo
 import { HashtagCloud } from '@/components/marketplace/HashtagCloud';
 import { BulkCopyButton } from '@/components/marketplace/BulkCopyButton';
 import { HashtagsOnlyExport } from '@/components/marketplace/HashtagsOnlyExport';
+import { SettingsPresets, type SettingsPreset } from '@/components/marketplace/SettingsPresets';
 
 import { parseExcelFile, createExcelWithHashtags, createCsvWithHashtags, resolveHashtagColumnName, getCellValue, getSheetNames } from '@/lib/marketplace/excel';
 import { DEFAULT_SETTINGS } from '@/lib/marketplace/hashtagGenerator';
@@ -466,6 +467,31 @@ export default function HomePage() {
     setGenerationSettings(DEFAULT_SETTINGS);
     setShowGenSettings(false);
   }, []);
+
+  /** Import settings from a previously saved JSON preset */
+  const handleImportSettings = useCallback((preset: SettingsPreset) => {
+    // Category
+    if (preset.categoryId) {
+      const cat = OZON_CATEGORIES.find(c => c.id === preset.categoryId) ?? null;
+      setSelectedOzonCategoryId(preset.categoryId);
+      setSelectedOzonCategory(cat);
+      // Record into recent
+      recordRecentCategory(preset.categoryId);
+    } else {
+      setSelectedOzonCategoryId(null);
+      setSelectedOzonCategory(null);
+    }
+    // Product type (reset if category changed)
+    setSelectedProductType(preset.productType ?? null);
+    // Custom keywords
+    setCustomKeywords(preset.customKeywords);
+    // Generation settings
+    setGenerationSettings(preset.generationSettings);
+    // Export format + auto-adjust count via the same handler
+    handleExportFormatChange(preset.exportFormat);
+    // Merge on regen
+    setMergeOnRegen(preset.mergeOnRegen);
+  }, [recordRecentCategory, handleExportFormatChange]);
 
   const handleSheetChange = useCallback((sheet: string) => {
     if (!fileBuffer || sheet === selectedSheet) return;
@@ -1025,6 +1051,17 @@ export default function HomePage() {
                       <span>Строк: <span className="font-medium text-foreground">{parseResult.totalRows}</span></span>
                       <span>•</span>
                       <span>Лист: <span className="font-medium text-foreground">{parseResult.sheetName}</span></span>
+                      <span>•</span>
+                      <SettingsPresets
+                        categoryId={selectedOzonCategoryId}
+                        productType={selectedProductType}
+                        customKeywords={customKeywords}
+                        generationSettings={generationSettings}
+                        exportFormat={exportFormat}
+                        mergeOnRegen={mergeOnRegen}
+                        onImport={handleImportSettings}
+                        onToast={(title, description, variant) => toast({ title, description, variant })}
+                      />
                     </div>
                   </div>
                 </CardHeader>
@@ -1450,6 +1487,9 @@ export default function HomePage() {
                   'Настройте минимум/максимум хештегов (по умолчанию 10–30)',
                   'Включите русский приоритет и смежные категории',
                   'Добавьте свои ключевые слова при необходимости',
+                  'В предпросмотре хештегов нажмите «Копировать» для быстрого копирования',
+                  'Сохраните настройки в JSON («Настройки» → «Сохранить») для повторного использования',
+                  'Загрузите настройки из JSON для нового файла без перенастройки',
                   'Выберите колонку с наименованием (определяется автоматически)',
                   'Нажмите «Сгенерировать хештеги»',
                   'Отредактируйте результат при необходимости (Ctrl+Z для отмены)',
@@ -1457,6 +1497,7 @@ export default function HomePage() {
                   'Изучите аналитику: язык, длина, топ хештегов',
                   'Горячие клавиши: Ctrl+G — генерация, Ctrl+F — поиск',
                   'Скопируйте хештеги в буфер (4 режима) или скачайте файл',
+                  'Скачайте «Только хештеги» для соцсетей (TXT/JSON/CSV)',
                   'Добавьте любимые категории в «Избранное» (★) для быстрого доступа',
                 ]}
               />
@@ -1545,7 +1586,7 @@ export default function HomePage() {
                 <div className="flex flex-col">
                   <span className="text-xs font-semibold text-foreground leading-tight flex items-center gap-1.5">
                     Marketplace SEO Helper
-                    <span className="text-[9px] px-1 py-0 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 font-mono">v9</span>
+                    <span className="text-[9px] px-1 py-0 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 font-mono">v10</span>
                   </span>
                   <span className="text-[10px] text-muted-foreground/70">
                     генератор хештегов для Ozon, WB и соцсетей
@@ -1566,6 +1607,10 @@ export default function HomePage() {
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-amber-200/60 text-amber-600/80 dark:border-amber-800/60 dark:text-amber-400/80 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors">
                   <Star className="h-2.5 w-2.5 mr-0.5 fill-amber-400 text-amber-400" />
                   Избранное ★
+                </Badge>
+                <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-violet-200/60 text-violet-600/80 dark:border-violet-800/60 dark:text-violet-400/80 hover:bg-violet-50/50 dark:hover:bg-violet-950/20 transition-colors">
+                  <Save className="h-2.5 w-2.5 mr-0.5" />
+                  Импорт настроек
                 </Badge>
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-amber-200/60 text-amber-600/80 dark:border-amber-800/60 dark:text-amber-400/80 hover:bg-amber-50/50 dark:hover:bg-amber-950/20 transition-colors">
                   <Zap className="h-2.5 w-2.5 mr-0.5" />

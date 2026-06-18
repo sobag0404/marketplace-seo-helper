@@ -1,9 +1,15 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Sparkles, Hash, Tag, AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { Sparkles, Hash, Tag, AlertCircle, Copy, Check } from 'lucide-react';
 import { generateHashtagsFromCategory, getCategoryGroup } from '@/lib/marketplace/categoryUtils';
 import type { OzonCategory } from '@/lib/marketplace/ozonCategories';
 
@@ -20,6 +26,13 @@ interface LivePreviewProps {
  * Live preview card shown in the configure step.
  * Displays sample hashtags generated from the current category + type + keywords,
  * so the user sees what they'll get BEFORE clicking "Generate".
+ *
+ * Includes:
+ *  - Tag count badge
+ *  - Semantic group label
+ *  - Copy-to-clipboard button (one click → all preview tags)
+ *  - Staggered tag-enter animation
+ *  - 3-tier color highlight (top-3 teal, 4-6 emerald, rest muted)
  */
 export function LivePreview({
   category,
@@ -28,6 +41,8 @@ export function LivePreview({
   targetCount,
   sampleName,
 }: LivePreviewProps) {
+  const [copied, setCopied] = useState(false);
+
   const preview = useMemo(() => {
     if (!category) return null;
 
@@ -40,6 +55,23 @@ export function LivePreview({
 
     return tags;
   }, [category, productType, customKeywords, sampleName, targetCount]);
+
+  const handleCopy = useCallback(async () => {
+    if (!preview || preview.length === 0) return;
+    const text = preview.join(' ');
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const textArea = document.createElement('textarea');
+      textArea.value = text;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  }, [preview]);
 
   if (!category) {
     return (
@@ -65,16 +97,45 @@ export function LivePreview({
               <Sparkles className="h-3.5 w-3.5 text-white" />
             </span>
             <h4 className="text-sm font-semibold text-foreground">Предпросмотр хештегов</h4>
-            <Badge variant="outline" className="text-[10px] border-teal-300 text-teal-600 dark:border-teal-700 dark:text-teal-400 bg-teal-50/60 dark:bg-teal-950/30">
+            <Badge variant="outline" className="text-[10px] border-teal-300 text-teal-600 dark:border-teal-700 dark:text-teal-400 bg-teal-50/60 dark:bg-teal-950/30 tabular-nums">
               <Hash className="h-2.5 w-2.5 mr-0.5" />
               {preview?.length ?? 0} шт.
             </Badge>
           </div>
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <Tag className="h-3 w-3" />
-            <span className="truncate max-w-[200px]">
-              {group ? `${group.emoji} ${group.name}` : category.name}
-            </span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <Tag className="h-3 w-3" />
+              <span className="truncate max-w-[180px]">
+                {group ? `${group.emoji} ${group.name}` : category.name}
+              </span>
+            </div>
+            {preview && preview.length > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCopy}
+                    className="h-7 px-2 gap-1 text-[11px] text-muted-foreground hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/30 transition-all duration-200"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="h-3 w-3 text-emerald-500 animate-in zoom-in-50 duration-300" />
+                        <span className="text-emerald-600 dark:text-emerald-400">Скопировано</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3" />
+                        Копировать
+                      </>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Скопировать все {preview.length} хештегов в буфер обмена</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </div>
 
@@ -85,7 +146,7 @@ export function LivePreview({
                 key={tag}
                 variant="outline"
                 className={`
-                  text-xs font-mono animate-tag-enter
+                  text-xs font-mono animate-tag-enter cursor-default
                   ${idx < 3
                     ? 'border-teal-300 bg-teal-100/70 text-teal-800 dark:border-teal-600 dark:bg-teal-900/40 dark:text-teal-200'
                     : idx < 6
@@ -113,3 +174,4 @@ export function LivePreview({
     </Card>
   );
 }
+
