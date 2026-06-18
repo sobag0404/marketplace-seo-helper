@@ -25,6 +25,7 @@ import { PreviewTable } from '@/components/marketplace/PreviewTable';
 import { ProcessingStats } from '@/components/marketplace/ProcessingStats';
 import { ExportButton } from '@/components/marketplace/ExportButton';
 import { CategorySelector } from '@/components/marketplace/CategorySelector';
+import { ProductTypeSelector } from '@/components/marketplace/ProductTypeSelector';
 import { DemoModeButton } from '@/components/marketplace/DemoModeButton';
 import { CustomKeywordsInput } from '@/components/marketplace/CustomKeywordsInput';
 import { HashtagAnalytics } from '@/components/marketplace/HashtagAnalytics';
@@ -78,6 +79,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedOzonCategory, setSelectedOzonCategory] = useState<OzonCategory | null>(null);
   const [selectedOzonCategoryId, setSelectedOzonCategoryId] = useState<string | null>(null);
+  const [selectedProductType, setSelectedProductType] = useState<string | null>(null);
   const [isDark, setIsDark] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [customKeywords, setCustomKeywords] = useState<string[]>([]);
@@ -249,7 +251,7 @@ export default function HomePage() {
               // Ozon category mode — generate from category + product type + custom keywords
               const rawTags = generateHashtagsFromCategory(
                 selectedOzonCategoryId,
-                undefined,
+                selectedProductType ?? undefined,
                 customKeywords,
                 nameValue
               );
@@ -315,7 +317,7 @@ export default function HomePage() {
         setIsProcessing(false);
       }
     }, 300);
-  }, [parseResult, selectedNameColumn, customKeywords, mergeOnRegen, processedRows, generationSettings, showError, toast, selectedOzonCategoryId]);
+  }, [parseResult, selectedNameColumn, customKeywords, mergeOnRegen, processedRows, generationSettings, showError, toast, selectedOzonCategoryId, selectedProductType]);
 
   // Keep ref in sync for keyboard shortcut usage
   generateRef.current = handleGenerate;
@@ -1006,8 +1008,18 @@ export default function HomePage() {
                     onCategoryChange={(id, cat) => {
                       setSelectedOzonCategoryId(id);
                       setSelectedOzonCategory(cat);
+                      setSelectedProductType(null);
                     }}
                   />
+
+                  {/* Product type selector — appears once a category is chosen */}
+                  {selectedOzonCategory && (
+                    <ProductTypeSelector
+                      category={selectedOzonCategory}
+                      selectedProductType={selectedProductType}
+                      onChange={setSelectedProductType}
+                    />
+                  )}
 
                   {/* Sheet selector (only for multi-sheet files) */}
                   <SheetSelector
@@ -1254,7 +1266,7 @@ export default function HomePage() {
                     onToggleRow={handleToggleRow}
                     showSuggestions={currentStep === 'done'}
                     categoryId={selectedOzonCategoryId ?? undefined}
-                    productType={selectedOzonCategory?.productTypes?.[0]}
+                    productType={selectedProductType ?? selectedOzonCategory?.productTypes?.[0]}
                     customKeywords={customKeywords}
                     targetHashtagCount={generationSettings.targetHashtagCount}
                   />
@@ -1432,7 +1444,7 @@ export default function HomePage() {
               <CollapsibleTrigger className="flex items-center gap-2 w-full py-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors duration-200 group">
                 <Info className="h-4 w-4" />
                 {selectedOzonCategory
-                  ? `Категория Ozon: ${selectedOzonCategory.name} (${selectedOzonCategory.productTypes.length} типов)`
+                  ? `Категория Ozon: ${selectedOzonCategory.name}${selectedProductType ? ` → ${selectedProductType}` : ''} (${selectedOzonCategory.productTypes.length} типов)`
                   : 'Выберите категорию Ozon'
                 }
                 <ChevronDown className="h-4 w-4 ml-auto transition-transform duration-200 group-data-[state=open]:rotate-180" />

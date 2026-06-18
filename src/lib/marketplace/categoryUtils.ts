@@ -1,5 +1,6 @@
 import { OZON_CATEGORIES, OzonCategory } from './ozonCategories';
 import { SEMANTIC_GROUPS, SemanticGroup, getGroupBaseHashtags } from './semanticGroups';
+import { rankHashtags } from './hashtagGenerator';
 
 /** Find category by its slug ID */
 export function findCategoryById(id: string): OzonCategory | undefined {
@@ -185,10 +186,36 @@ export function generateHashtagsFromCategory(
   });
   hashtags.push(...adjHashtags.slice(0, 6));
 
-  // Remove duplicates, validate, and return
-  return [...new Set(hashtags)]
+  // 7. Universal marketplace fallback hashtags — ensure a healthy minimum
+  //     even for short category names. Russian-first, non-promotional.
+  const UNIVERSAL_FALLBACK = [
+    '#выбор', '#топ', '#качество', '#новинка', '#популярное',
+    '#оригинал', '#хит', '#мастхэв', '#практичность', '#длядома',
+    '#подарок', '#идея', '#находка', '#стиль', '#дизайн',
+    '#комфорт', '#радость', '#тренд', '#лучшее', '#рекомендация',
+  ];
+  for (const tag of UNIVERSAL_FALLBACK) {
+    if (hashtags.length >= 30) break;
+    if (!hashtags.includes(tag)) {
+      hashtags.push(tag);
+    }
+  }
+
+  // Dedupe (case-insensitive), validate, rank russian-first, cap at 30
+  const seen = new Set<string>();
+  const deduped = hashtags.filter((tag) => {
+    const key = tag.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const valid = deduped
     .filter(tag => tag.length > 2 && tag.length <= 30)
     .filter(tag => /^#[a-zа-яё0-9]+$/i.test(tag));
+
+  // Russian hashtags first, then allowed English, then other
+  return rankHashtags(valid).slice(0, 30);
 }
 
 /** Forbidden words that shouldn't become hashtags */
