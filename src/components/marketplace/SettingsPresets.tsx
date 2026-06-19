@@ -38,6 +38,10 @@ export interface SettingsPreset {
   mergeOnRegen: boolean;
   /** Secondary categories merged with primary (multi-category feature) */
   secondaryCategoryIds: string[];
+  /** Category source mode: 'single' = one for all rows, 'column' = per-row */
+  categorySourceMode: 'single' | 'column';
+  /** Category column header (when categorySourceMode === 'column') */
+  selectedCategoryColumn: string;
 }
 
 interface SettingsPresetsProps {
@@ -48,6 +52,8 @@ interface SettingsPresetsProps {
   exportFormat: ExportFormat;
   mergeOnRegen: boolean;
   secondaryCategoryIds: string[];
+  categorySourceMode: 'single' | 'column';
+  selectedCategoryColumn: string;
   onImport: (preset: SettingsPreset) => void;
   onToast: (title: string, description: string, variant?: 'default' | 'destructive') => void;
 }
@@ -69,6 +75,8 @@ export function SettingsPresets({
   exportFormat,
   mergeOnRegen,
   secondaryCategoryIds,
+  categorySourceMode,
+  selectedCategoryColumn,
   onImport,
   onToast,
 }: SettingsPresetsProps) {
@@ -87,8 +95,10 @@ export function SettingsPresets({
       exportFormat,
       mergeOnRegen,
       secondaryCategoryIds,
+      categorySourceMode,
+      selectedCategoryColumn,
     };
-  }, [categoryId, productType, customKeywords, generationSettings, exportFormat, mergeOnRegen, secondaryCategoryIds]);
+  }, [categoryId, productType, customKeywords, generationSettings, exportFormat, mergeOnRegen, secondaryCategoryIds, categorySourceMode, selectedCategoryColumn]);
 
   const handleSave = useCallback(() => {
     const preset = buildPreset();
@@ -140,11 +150,13 @@ export function SettingsPresets({
           secondaryCategoryIds: Array.isArray(parsed.secondaryCategoryIds)
             ? parsed.secondaryCategoryIds.filter((x: unknown): x is string => typeof x === 'string').slice(0, 5)
             : [],
+          categorySourceMode: parsed.categorySourceMode === 'column' ? 'column' : 'single',
+          selectedCategoryColumn: typeof parsed.selectedCategoryColumn === 'string' ? parsed.selectedCategoryColumn : '',
         });
         setLastAction('load');
         onToast(
           'Настройки загружены',
-          `${file.name} • категория: ${parsed.categoryId ?? '—'} • ${parsed.customKeywords?.length ?? 0} ключевиков${parsed.secondaryCategoryIds?.length ? ` • +${parsed.secondaryCategoryIds.length} доп. кат.` : ''}`
+          `${file.name} • категория: ${parsed.categoryId ?? '—'} • ${parsed.customKeywords?.length ?? 0} ключевиков${parsed.secondaryCategoryIds?.length ? ` • +${parsed.secondaryCategoryIds.length} доп. кат.` : ''}${parsed.categorySourceMode === 'column' ? ' • из колонки' : ''}`
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Не удалось прочитать файл';

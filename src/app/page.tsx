@@ -7,7 +7,7 @@ import {
   CheckCircle2, Circle, Loader2, Moon, Sun,
   FileSpreadsheet, FileText, Pencil, PencilOff, Search,
   Undo2, Filter, Rows3, Zap, Keyboard, Eye, PencilLine,
-  Plus, Merge, Tag, Boxes, Star, Save, History, Layers, Ban
+  Plus, Merge, Tag, Boxes, Star, Save, History, Layers, Ban, Columns3
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -45,12 +45,13 @@ import { UsageStatsMenu } from '@/components/marketplace/UsageStatsMenu';
 import { HashtagBlacklist } from '@/components/marketplace/HashtagBlacklist';
 import { useHashtagBlacklist, filterHashtagsByBlacklist } from '@/components/marketplace/useHashtagBlacklist';
 import { SuggestionKits } from '@/components/marketplace/SuggestionKits';
+import { CategoryColumnSelector, type CategorySourceMode } from '@/components/marketplace/CategoryColumnSelector';
 
 import { parseExcelFile, createExcelWithHashtags, createCsvWithHashtags, resolveHashtagColumnName, getCellValue, getSheetNames } from '@/lib/marketplace/excel';
 import { DEFAULT_SETTINGS } from '@/lib/marketplace/hashtagGenerator';
 import type { ParseResult, TableRow, ProcessingStats as Stats, GenerationSettings } from '@/lib/marketplace/types';
 import { OZON_CATEGORIES, OzonCategory } from '@/lib/marketplace/ozonCategories';
-import { generateHashtagsFromCategory, generateHashtagsFromMultipleCategories, getCategoryGroup, getAdjacentCategories, getCategoryGroupHashtags } from '@/lib/marketplace/categoryUtils';
+import { generateHashtagsFromCategory, generateHashtagsFromMultipleCategories, getCategoryGroup, getAdjacentCategories, getCategoryGroupHashtags, matchCategoryFromText } from '@/lib/marketplace/categoryUtils';
 import { GenerationSettingsPanel } from '@/components/marketplace/GenerationSettingsPanel';
 
 type Step = 'upload' | 'configure' | 'process' | 'done';
@@ -92,6 +93,8 @@ export default function HomePage() {
   const [selectedOzonCategoryId, setSelectedOzonCategoryId] = useState<string | null>(null);
   const [selectedProductType, setSelectedProductType] = useState<string | null>(null);
   const [secondaryCategoryIds, setSecondaryCategoryIds] = useState<string[]>([]);
+  const [categorySourceMode, setCategorySourceMode] = useState<CategorySourceMode>('single');
+  const [selectedCategoryColumn, setSelectedCategoryColumn] = useState<string>('');
   const { recent: recentCategories, record: recordRecentCategory, clear: clearRecentCategories } = useRecentCategories();
   const { favorites: favoriteCategories, toggle: toggleFavoriteCategory } = useCategoryFavorites();
   const { usage: categoryUsage, recordUse: recordCategoryUsage, clear: clearCategoryUsage } = useCategoryUsage();
@@ -175,21 +178,25 @@ export default function HomePage() {
     if (validSecondary.length > 0) {
       setSecondaryCategoryIds(validSecondary);
     }
+    // Restore category source mode (single vs column)
+    setCategorySourceMode(autosaved.categorySourceMode === 'column' ? 'column' : 'single');
+    setSelectedCategoryColumn(autosaved.selectedCategoryColumn ?? '');
     // Note: selectedNameColumn/selectedArticleColumn are restored after file load
     // (they need headers to be meaningful, so we stash them via a ref below)
     pendingColumnsRef.current = {
       name: autosaved.selectedNameColumn,
       article: autosaved.selectedArticleColumn,
+      category: autosaved.selectedCategoryColumn,
     };
 
     toast({
       title: 'Настройки восстановлены',
-      description: `${autosaved.categoryId ? 'категория + ' : ''}${autosaved.customKeywords.length} ключевиков${validSecondary.length > 0 ? ` • +${validSecondary.length} доп. кат.` : ''} • ${autosaved.exportFormat}`,
+      description: `${autosaved.categoryId ? 'категория + ' : ''}${autosaved.customKeywords.length} ключевиков${validSecondary.length > 0 ? ` • +${validSecondary.length} доп. кат.` : ''}${autosaved.categorySourceMode === 'column' ? ' • режим: из колонки' : ''} • ${autosaved.exportFormat}`,
     });
   }, [autosaved, toast]);
 
   /** Pending column overrides to apply after file loads (from autosave) */
-  const pendingColumnsRef = useRef<{ name: string; article: string }>({ name: '', article: '' });
+  const pendingColumnsRef = useRef<{ name: string; article: string; category: string }>({ name: '', article: '', category: '' });
 
   // Keyboard shortcuts: Ctrl+Z for undo, Ctrl+F for search, Ctrl+G for generate
   useEffect(() => {
@@ -291,8 +298,18 @@ export default function HomePage() {
         : detectedArticle;
       setSelectedArticleColumn(articleCol);
 
+      // Category column: auto-detect OR use pending autosave override
+      const detectedCategory = result.detectedCategoryColumn !== null
+        ? result.headers[result.detectedCategoryColumn]
+        : '';
+      const pendingCategory = pendingColumnsRef.current.category;
+      const categoryCol = pendingCategory && result.headers.includes(pendingCategory)
+        ? pendingCategory
+        : detectedCategory;
+      setSelectedCategoryColumn(categoryCol);
+
       // Clear pending overrides after applying
-      pendingColumnsRef.current = { name: '', article: '' };
+      pendingColumnsRef.current = { name: '', article: '', category: '' };
 
       setCurrentStep('configure');
       setIsEditMode(false);
@@ -346,19 +363,40 @@ export default function HomePage() {
 
             let hashtags: string;
 
-            if (selectedOzonCategoryId) {
+            // Determine the effective category for this row.
+            // In 'column' mode, each row reads its category from the chosen
+            // column and fuzzy-matches it to an Ozon category. If no match,
+            // fall back to the primary selected category (if any) or skip.
+            let effectiveCategoryId: string | null = selectedOzonCategoryId;
+            if (categorySourceMode === 'column' && selectedCategoryColumn) {
+              const cellCategory = getCellValue(row, selectedCategoryColumn).trim();
+              if (cellCategory) {
+                const match = matchCategoryFromText(cellCategory);
+                if (match.category) {
+                  effectiveCategoryId = match.category.id;
+                } else {
+                  // No match — fall back to primary if set, otherwise skip
+                  effectiveCategoryId = selectedOzonCategoryId;
+                }
+              }
+            }
+
+            if (effectiveCategoryId) {
               // Ozon category mode — generate from category + (optional secondary categories)
               // + product type + custom keywords
-              const rawTags = secondaryCategoryIds.length > 0
+              // Note: secondary categories only apply when using the primary
+              // (single) category — in column mode each row gets its own
+              // category without secondary merging to avoid noisy output.
+              const rawTags = (categorySourceMode === 'single' && secondaryCategoryIds.length > 0)
                 ? generateHashtagsFromMultipleCategories(
-                    selectedOzonCategoryId,
+                    effectiveCategoryId,
                     secondaryCategoryIds,
                     selectedProductType ?? undefined,
                     customKeywords,
                     nameValue
                   )
                 : generateHashtagsFromCategory(
-                    selectedOzonCategoryId,
+                    effectiveCategoryId,
                     selectedProductType ?? undefined,
                     customKeywords,
                     nameValue
@@ -437,7 +475,7 @@ export default function HomePage() {
         setIsProcessing(false);
       }
     }, 300);
-  }, [parseResult, selectedNameColumn, customKeywords, mergeOnRegen, processedRows, generationSettings, showError, toast, selectedOzonCategoryId, selectedProductType, secondaryCategoryIds, blacklistSet]);
+  }, [parseResult, selectedNameColumn, customKeywords, mergeOnRegen, processedRows, generationSettings, showError, toast, selectedOzonCategoryId, selectedProductType, secondaryCategoryIds, categorySourceMode, selectedCategoryColumn, blacklistSet]);
 
   // Keep ref in sync for keyboard shortcut usage
   generateRef.current = handleGenerate;
@@ -569,6 +607,8 @@ export default function HomePage() {
     setGenerationSettings(DEFAULT_SETTINGS);
     setShowGenSettings(false);
     setSecondaryCategoryIds([]);
+    setCategorySourceMode('single');
+    setSelectedCategoryColumn('');
     // Clear autosaved settings on full reset so reload doesn't bring them back
     clearAutosave();
   }, []);
@@ -600,6 +640,9 @@ export default function HomePage() {
     const knownIds = new Set(OZON_CATEGORIES.map(c => c.id));
     const validSecondary = (preset.secondaryCategoryIds ?? []).filter(id => knownIds.has(id));
     setSecondaryCategoryIds(validSecondary);
+    // Category source mode + column
+    setCategorySourceMode(preset.categorySourceMode === 'column' ? 'column' : 'single');
+    setSelectedCategoryColumn(preset.selectedCategoryColumn ?? '');
   }, [recordRecentCategory, handleExportFormatChange]);
 
   const handleSheetChange = useCallback((sheet: string) => {
@@ -621,6 +664,17 @@ export default function HomePage() {
         setSelectedArticleColumn('');
       }
 
+      // Re-detect category column on sheet change (only if the previous
+      // selection isn't present in the new sheet)
+      if (result.detectedCategoryColumn !== null) {
+        const detectedCat = result.headers[result.detectedCategoryColumn];
+        if (!selectedCategoryColumn || !result.headers.includes(selectedCategoryColumn)) {
+          setSelectedCategoryColumn(detectedCat);
+        }
+      } else if (selectedCategoryColumn && !result.headers.includes(selectedCategoryColumn)) {
+        setSelectedCategoryColumn('');
+      }
+
       setIsEditMode(false);
       setProcessedRows([]);
       setStats(null);
@@ -634,7 +688,7 @@ export default function HomePage() {
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Ошибка при чтении листа');
     }
-  }, [fileBuffer, fileName, selectedSheet, showError, toast]);
+  }, [fileBuffer, fileName, selectedSheet, selectedCategoryColumn, showError, toast]);
 
   const pushUndo = useCallback((description: string) => {
     setUndoHistory((prev) => {
@@ -828,25 +882,55 @@ export default function HomePage() {
   }, [parseResult, selectedNameColumn]);
 
   /** Sample hashtags for the HashtagBlacklist "quick ban" suggestions —
-   *  mirrors LivePreview's preview logic but doesn't filter by blacklist */
+   *  mirrors LivePreview's preview logic but doesn't filter by blacklist.
+   *  In column mode, uses the first row's matched category. */
   const previewHashtagsForBlacklist = useMemo(() => {
-    if (!selectedOzonCategoryId) return [];
-    const tags = secondaryCategoryIds.length > 0
+    // Determine the effective category for the preview
+    let effectiveId: string | null = selectedOzonCategoryId;
+    if (categorySourceMode === 'column' && selectedCategoryColumn && parseResult) {
+      for (const row of parseResult.rows) {
+        const cellVal = getCellValue(row, selectedCategoryColumn).trim();
+        if (cellVal) {
+          const match = matchCategoryFromText(cellVal);
+          if (match.category) {
+            effectiveId = match.category.id;
+          }
+          break; // only check the first non-empty row
+        }
+      }
+    }
+    if (!effectiveId) return [];
+    const tags = (categorySourceMode === 'single' && secondaryCategoryIds.length > 0)
       ? generateHashtagsFromMultipleCategories(
-          selectedOzonCategoryId,
+          effectiveId,
           secondaryCategoryIds,
           selectedProductType ?? undefined,
           customKeywords,
           sampleProductName
         )
       : generateHashtagsFromCategory(
-          selectedOzonCategoryId,
+          effectiveId,
           selectedProductType ?? undefined,
           customKeywords,
           sampleProductName
         );
     return tags.slice(0, 15);
-  }, [selectedOzonCategoryId, secondaryCategoryIds, selectedProductType, customKeywords, sampleProductName]);
+  }, [selectedOzonCategoryId, secondaryCategoryIds, selectedProductType, customKeywords, sampleProductName, categorySourceMode, selectedCategoryColumn, parseResult]);
+
+  /** In column mode: the category matched from the first data row's category cell,
+   *  used for the LivePreview sample. */
+  const perRowSample = useMemo(() => {
+    if (categorySourceMode !== 'column' || !selectedCategoryColumn || !parseResult) {
+      return { category: null as OzonCategory | null, raw: undefined as string | undefined };
+    }
+    for (const row of parseResult.rows) {
+      const cellVal = getCellValue(row, selectedCategoryColumn).trim();
+      if (!cellVal) continue;
+      const match = matchCategoryFromText(cellVal);
+      return { category: match.category, raw: cellVal };
+    }
+    return { category: null, raw: undefined };
+  }, [categorySourceMode, selectedCategoryColumn, parseResult]);
 
   const processedRowIndices = useMemo(() => {
     // When search is active, we need to map filtered indices back to processedRows
@@ -877,6 +961,8 @@ export default function HomePage() {
     selectedNameColumn,
     selectedArticleColumn,
     secondaryCategoryIds,
+    categorySourceMode,
+    selectedCategoryColumn,
     enabled: currentStep !== 'upload',
   });
 
@@ -1205,6 +1291,8 @@ export default function HomePage() {
                         exportFormat={exportFormat}
                         mergeOnRegen={mergeOnRegen}
                         secondaryCategoryIds={secondaryCategoryIds}
+                        categorySourceMode={categorySourceMode}
+                        selectedCategoryColumn={selectedCategoryColumn}
                         onImport={handleImportSettings}
                         onToast={(title, description, variant) => toast({ title, description, variant })}
                       />
@@ -1251,8 +1339,20 @@ export default function HomePage() {
                     onToggleFavorite={toggleFavoriteCategory}
                   />
 
-                  {/* Product type selector — appears once a category is chosen */}
-                  {selectedOzonCategory && (
+                  {/* Category source selector: single category vs from-column (per-row) */}
+                  <CategoryColumnSelector
+                    headers={parseResult.headers}
+                    mode={categorySourceMode}
+                    selectedColumn={selectedCategoryColumn}
+                    onModeChange={setCategorySourceMode}
+                    onColumnChange={setSelectedCategoryColumn}
+                    rows={parseResult.rows}
+                    detectedColumn={parseResult.detectedCategoryColumn}
+                  />
+
+                  {/* Product type selector — appears once a category is chosen
+                      (only in single mode; in column mode each row has its own category) */}
+                  {selectedOzonCategory && categorySourceMode === 'single' && (
                     <ProductTypeSelector
                       category={selectedOzonCategory}
                       selectedProductType={selectedProductType}
@@ -1260,8 +1360,9 @@ export default function HomePage() {
                     />
                   )}
 
-                  {/* Multi-category selector — merge hashtags from 2-3 additional categories */}
-                  {selectedOzonCategory && (
+                  {/* Multi-category selector — merge hashtags from 2-3 additional categories
+                      (only in single mode; in column mode per-row categories already provide diversity) */}
+                  {selectedOzonCategory && categorySourceMode === 'single' && (
                     <MultiCategorySelector
                       selectedCategoryIds={secondaryCategoryIds}
                       onChange={setSecondaryCategoryIds}
@@ -1277,6 +1378,9 @@ export default function HomePage() {
                     targetCount={generationSettings.targetHashtagCount}
                     sampleName={sampleProductName}
                     secondaryCategoryIds={secondaryCategoryIds}
+                    categorySourceMode={categorySourceMode}
+                    perRowSampleCategory={perRowSample.category}
+                    perRowSampleRaw={perRowSample.raw}
                   />
 
                   {/* Hashtag blacklist — exclude unwanted tags from generation */}
@@ -1663,6 +1767,8 @@ export default function HomePage() {
                   'Выберите лист таблицы (для многостраничных Excel)',
                   'Выберите категорию Ozon из 614 категорий с поиском',
                   'Уточните тип товара внутри категории (9 328 типов)',
+                  'Переключитесь на «Из колонки» если в файле есть колонка с категориями',
+                  'В режиме «Из колонки» каждая строка получит хештеги из своей категории',
                   'Добавьте 1-3 доп. категории — их хештеги объединятся с основной',
                   'Настройте минимум/максимум хештегов (по умолчанию 10–30)',
                   'Включите русский приоритет и смежные категории',
@@ -1776,7 +1882,7 @@ export default function HomePage() {
                 <div className="flex flex-col">
                   <span className="text-xs font-semibold text-foreground leading-tight flex items-center gap-1.5">
                     Marketplace SEO Helper
-                    <span className="text-[9px] px-1 py-0 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 font-mono">v14</span>
+                    <span className="text-[9px] px-1 py-0 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 font-mono">v15</span>
                   </span>
                   <span className="text-[10px] text-muted-foreground/70">
                     генератор хештегов для Ozon, WB и соцсетей
@@ -1809,6 +1915,10 @@ export default function HomePage() {
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-violet-200/60 text-violet-600/80 dark:border-violet-800/60 dark:text-violet-400/80 hover:bg-violet-50/50 dark:hover:bg-violet-950/20 transition-colors">
                   <Layers className="h-2.5 w-2.5 mr-0.5" />
                   Мульти-категории
+                </Badge>
+                <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-violet-200/60 text-violet-600/80 dark:border-violet-800/60 dark:text-violet-400/80 hover:bg-violet-50/50 dark:hover:bg-violet-950/20 transition-colors">
+                  <Columns3 className="h-2.5 w-2.5 mr-0.5" />
+                  Категория из колонки
                 </Badge>
                 <Badge variant="outline" className="text-[10px] px-2 py-0.5 h-5 border-rose-200/60 text-rose-600/80 dark:border-rose-800/60 dark:text-rose-400/80 hover:bg-rose-50/50 dark:hover:bg-rose-950/20 transition-colors">
                   <Ban className="h-2.5 w-2.5 mr-0.5" />

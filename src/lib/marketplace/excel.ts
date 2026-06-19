@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import type { ParseResult, TableRow } from './types';
-import { nameColumnKeywords, articleColumnKeywords } from './common';
+import { nameColumnKeywords, articleColumnKeywords, categoryColumnKeywords } from './common';
 
 /** Прочитать Excel- или CSV-файл и вернуть результат парсинга */
 export function parseExcelFile(buffer: ArrayBuffer, fileName?: string, sheetName?: string): ParseResult {
@@ -62,6 +62,7 @@ export function parseExcelFile(buffer: ArrayBuffer, fileName?: string, sheetName
   // Автоопределение колонок
   const detectedNameColumn = detectColumn(headers, nameColumnKeywords);
   const detectedArticleColumn = detectColumn(headers, articleColumnKeywords);
+  const detectedCategoryColumn = detectColumn(headers, categoryColumnKeywords);
 
   return {
     headers,
@@ -70,6 +71,7 @@ export function parseExcelFile(buffer: ArrayBuffer, fileName?: string, sheetName
     totalRows: rows.length,
     detectedNameColumn,
     detectedArticleColumn,
+    detectedCategoryColumn,
   };
 }
 

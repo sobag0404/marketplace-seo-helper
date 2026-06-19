@@ -70,3 +70,18 @@ export const articleColumnKeywords: string[] = [
   'id',
   'номер',
 ];
+
+/** Ключевые слова для автоматического определения колонки с категорией товара */
+export const categoryColumnKeywords: string[] = [
+  'категория',
+  'кат',
+  'категор',
+  'раздел',
+  'рубрика',
+  'группа',
+  'тип товара',
+  'вид товара',
+  'category',
+  'type',
+  'group',
+];

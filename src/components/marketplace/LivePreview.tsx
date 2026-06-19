@@ -9,10 +9,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Sparkles, Hash, Tag, AlertCircle, Copy, Check, Layers, Ban } from 'lucide-react';
+import { Sparkles, Hash, Tag, AlertCircle, Copy, Check, Layers, Ban, Columns3 } from 'lucide-react';
 import { generateHashtagsFromCategory, generateHashtagsFromMultipleCategories, getCategoryGroup } from '@/lib/marketplace/categoryUtils';
 import type { OzonCategory } from '@/lib/marketplace/ozonCategories';
 import { useBlacklistSet, filterHashtagsByBlacklist } from './useHashtagBlacklist';
+import type { CategorySourceMode } from './CategoryColumnSelector';
 
 interface LivePreviewProps {
   category: OzonCategory | null;
@@ -23,6 +24,13 @@ interface LivePreviewProps {
   sampleName?: string;
   /** Secondary categories whose hashtags are merged with the primary category */
   secondaryCategoryIds?: string[];
+  /** Category source mode: 'single' = one for all, 'column' = per-row */
+  categorySourceMode?: CategorySourceMode;
+  /** In column mode: the category matched from the first data row's category cell.
+   *  When provided (and mode === 'column'), the preview uses this instead of `category`. */
+  perRowSampleCategory?: OzonCategory | null;
+  /** In column mode: the raw cell value that was matched (for display) */
+  perRowSampleRaw?: string;
 }
 
 /**
@@ -45,51 +53,65 @@ export function LivePreview({
   targetCount,
   sampleName,
   secondaryCategoryIds = [],
+  categorySourceMode = 'single',
+  perRowSampleCategory = null,
+  perRowSampleRaw,
 }: LivePreviewProps) {
   const [copied, setCopied] = useState(false);
   const blacklist = useBlacklistSet();
 
-  const preview = useMemo(() => {
-    if (!category) return null;
+  // In column mode, use the per-row sample category (matched from the first
+  // data row's category cell). Falls back to the primary `category` if no
+  // per-row sample is available (e.g. no data rows, or no match).
+  const effectiveCategory: OzonCategory | null =
+    categorySourceMode === 'column' ? (perRowSampleCategory ?? category) : category;
 
-    const allTags = secondaryCategoryIds.length > 0
+  // In column mode, secondary categories are intentionally not applied
+  // (each row already has its own category). So we only use secondary merge
+  // when in single mode.
+  const useSecondaryMerge = categorySourceMode === 'single' && secondaryCategoryIds.length > 0;
+
+  const preview = useMemo(() => {
+    if (!effectiveCategory) return null;
+
+    const allTags = useSecondaryMerge
       ? generateHashtagsFromMultipleCategories(
-          category.id,
+          effectiveCategory.id,
           secondaryCategoryIds,
           productType ?? undefined,
           customKeywords,
           sampleName
         )
       : generateHashtagsFromCategory(
-          category.id,
+          effectiveCategory.id,
           productType ?? undefined,
           customKeywords,
           sampleName
         );
     const filtered = filterHashtagsByBlacklist(allTags, blacklist);
     return filtered.slice(0, targetCount);
-  }, [category, productType, customKeywords, sampleName, targetCount, secondaryCategoryIds, blacklist]);
+  }, [effectiveCategory, useSecondaryMerge, secondaryCategoryIds, productType, customKeywords, sampleName, targetCount, blacklist]);
 
   // Track how many tags were removed by the blacklist (for UI hint)
   const blacklistedCount = useMemo(() => {
-    if (!category) return 0;
-    const allTags = secondaryCategoryIds.length > 0
+    if (!effectiveCategory) return 0;
+    const allTags = useSecondaryMerge
       ? generateHashtagsFromMultipleCategories(
-          category.id,
+          effectiveCategory.id,
           secondaryCategoryIds,
           productType ?? undefined,
           customKeywords,
           sampleName
         )
       : generateHashtagsFromCategory(
-          category.id,
+          effectiveCategory.id,
           productType ?? undefined,
           customKeywords,
           sampleName
         );
     if (blacklist.size === 0) return 0;
     return allTags.length - filterHashtagsByBlacklist(allTags, blacklist).length;
-  }, [category, productType, customKeywords, sampleName, secondaryCategoryIds, blacklist]);
+  }, [effectiveCategory, useSecondaryMerge, secondaryCategoryIds, productType, customKeywords, sampleName, blacklist]);
 
   const handleCopy = useCallback(async () => {
     if (!preview || preview.length === 0) return;
@@ -108,20 +130,24 @@ export function LivePreview({
     setTimeout(() => setCopied(false), 1800);
   }, [preview]);
 
-  if (!category) {
+  if (!effectiveCategory) {
     return (
       <Card className="border-dashed border-2 bg-muted/20">
         <CardContent className="p-4 flex items-center gap-3 text-sm text-muted-foreground">
           <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />
           <span>
-            Выберите категорию Ozon, чтобы увидеть предварительный набор хештегов.
+            {categorySourceMode === 'column'
+              ? 'Выберите колонку с категориями — предпросмотр покажет хештеги для первой строки.'
+              : 'Выберите категорию Ozon, чтобы увидеть предварительный набор хештегов.'}
           </span>
         </CardContent>
       </Card>
     );
   }
 
-  const group = getCategoryGroup(category.id);
+  const group = getCategoryGroup(effectiveCategory.id);
+  const showSecondaryBadge = categorySourceMode === 'single' && secondaryCategoryIds.length > 0;
+  const showColumnBadge = categorySourceMode === 'column';
 
   return (
     <Card className="shadow-sm border-teal-200/60 dark:border-teal-800/40 bg-gradient-to-br from-teal-50/40 via-emerald-50/30 to-cyan-50/20 dark:from-teal-950/15 dark:via-emerald-950/10 dark:to-cyan-950/10 animate-in fade-in slide-in-from-bottom-2 duration-300">
@@ -140,11 +166,35 @@ export function LivePreview({
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <Tag className="h-3 w-3" />
-              <span className="truncate max-w-[180px]">
-                {group ? `${group.emoji} ${group.name}` : category.name}
+              <span className="truncate max-w-[180px]" title={effectiveCategory.name}>
+                {group ? `${group.emoji} ${group.name}` : effectiveCategory.name}
               </span>
             </div>
-            {secondaryCategoryIds.length > 0 && (
+            {showColumnBadge && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" className="text-[10px] border-violet-300 text-violet-600 dark:border-violet-700 dark:text-violet-400 bg-violet-50/60 dark:bg-violet-950/30 gap-0.5 cursor-help">
+                    <Columns3 className="h-2.5 w-2.5" />
+                    из колонки
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <div className="text-xs max-w-xs">
+                    <div className="font-semibold">Режим «Из колонки»</div>
+                    {perRowSampleRaw ? (
+                      <div className="text-muted-foreground mt-0.5">
+                        Образец из первой строки: «{perRowSampleRaw}» → {effectiveCategory.name}
+                      </div>
+                    ) : (
+                      <div className="text-muted-foreground mt-0.5">
+                        Каждая строка получит хештеги из своей категории.
+                      </div>
+                    )}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {showSecondaryBadge && (
               <Badge variant="outline" className="text-[10px] border-violet-300 text-violet-600 dark:border-violet-700 dark:text-violet-400 bg-violet-50/60 dark:bg-violet-950/30 gap-0.5">
                 <Layers className="h-2.5 w-2.5" />
                 +{secondaryCategoryIds.length}
@@ -222,7 +272,15 @@ export function LivePreview({
 
         <p className="text-[10px] text-muted-foreground/80 flex items-center gap-1">
           <Sparkles className="h-2.5 w-2.5" />
-          Образец на основе{sampleName ? ` «${sampleName.slice(0, 40)}${sampleName.length > 40 ? '…' : ''}»` : ' названия категории'}. Финальный результат может отличаться для каждой строки.
+          {categorySourceMode === 'column' && perRowSampleRaw ? (
+            <>
+              Образец из первой строки: категория «{perRowSampleRaw.slice(0, 30)}{perRowSampleRaw.length > 30 ? '…' : ''}» → {effectiveCategory.name}. Каждая строка получит хештеги из своей категории.
+            </>
+          ) : (
+            <>
+              Образец на основе{sampleName ? ` «${sampleName.slice(0, 40)}${sampleName.length > 40 ? '…' : ''}»` : ' названия категории'}. Финальный результат может отличаться для каждой строки.
+            </>
+          )}
         </p>
       </CardContent>
     </Card>

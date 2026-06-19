@@ -24,6 +24,7 @@ export interface ParseResult {
   totalRows: number;
   detectedNameColumn: number | null;
   detectedArticleColumn: number | null;
+  detectedCategoryColumn: number | null;
 }
 
 /** Результат валидации хештега */

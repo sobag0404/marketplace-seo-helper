@@ -31,6 +31,10 @@ export interface PersistedSettings {
   selectedArticleColumn: string;
   /** Secondary categories merged with primary (multi-category feature) */
   secondaryCategoryIds: string[];
+  /** Category source mode: 'single' = one category for all rows, 'column' = per-row from column */
+  categorySourceMode: 'single' | 'column';
+  /** Category column header (when categorySourceMode === 'column') */
+  selectedCategoryColumn: string;
 }
 
 const STORAGE_KEY = 'msh-autosave-settings';
@@ -55,6 +59,8 @@ const EMPTY_SETTINGS: PersistedSettings = {
   selectedNameColumn: '',
   selectedArticleColumn: '',
   secondaryCategoryIds: [],
+  categorySourceMode: 'single',
+  selectedCategoryColumn: '',
 };
 
 let cachedRaw: string | null | undefined = undefined;
@@ -80,6 +86,8 @@ function parse(raw: string | null): PersistedSettings | null {
       secondaryCategoryIds: Array.isArray(parsed.secondaryCategoryIds)
         ? parsed.secondaryCategoryIds.filter((x: unknown): x is string => typeof x === 'string').slice(0, 5)
         : [],
+      categorySourceMode: parsed.categorySourceMode === 'column' ? 'column' : 'single',
+      selectedCategoryColumn: typeof parsed.selectedCategoryColumn === 'string' ? parsed.selectedCategoryColumn : '',
     };
   } catch {
     return null;
@@ -155,6 +163,10 @@ interface UseAutosaveArgs {
   selectedArticleColumn: string;
   /** Secondary categories merged with primary (multi-category feature) */
   secondaryCategoryIds: string[];
+  /** Category source mode: 'single' = one for all rows, 'column' = per-row */
+  categorySourceMode: 'single' | 'column';
+  /** Category column header (when categorySourceMode === 'column') */
+  selectedCategoryColumn: string;
   /** Disable autosave (e.g. on upload step where settings aren't yet meaningful) */
   enabled: boolean;
 }
@@ -175,14 +187,16 @@ export function useAutosaveSettings({
   selectedNameColumn,
   selectedArticleColumn,
   secondaryCategoryIds,
+  categorySourceMode,
+  selectedCategoryColumn,
   enabled,
 }: UseAutosaveArgs) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep latest values in a ref so the effect doesn't re-run on every change
-  const valuesRef = useRef({ categoryId, productType, customKeywords, generationSettings, exportFormat, mergeOnRegen, selectedNameColumn, selectedArticleColumn, secondaryCategoryIds, enabled });
+  const valuesRef = useRef({ categoryId, productType, customKeywords, generationSettings, exportFormat, mergeOnRegen, selectedNameColumn, selectedArticleColumn, secondaryCategoryIds, categorySourceMode, selectedCategoryColumn, enabled });
   useEffect(() => {
-    valuesRef.current = { categoryId, productType, customKeywords, generationSettings, exportFormat, mergeOnRegen, selectedNameColumn, selectedArticleColumn, secondaryCategoryIds, enabled };
+    valuesRef.current = { categoryId, productType, customKeywords, generationSettings, exportFormat, mergeOnRegen, selectedNameColumn, selectedArticleColumn, secondaryCategoryIds, categorySourceMode, selectedCategoryColumn, enabled };
   });
 
   useEffect(() => {
@@ -206,13 +220,15 @@ export function useAutosaveSettings({
         selectedNameColumn: v.selectedNameColumn,
         selectedArticleColumn: v.selectedArticleColumn,
         secondaryCategoryIds: v.secondaryCategoryIds.slice(0, 5),
+        categorySourceMode: v.categorySourceMode,
+        selectedCategoryColumn: v.selectedCategoryColumn,
       };
       save(snapshot);
     }, DEBOUNCE_MS);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [categoryId, productType, customKeywords, generationSettings, exportFormat, mergeOnRegen, selectedNameColumn, selectedArticleColumn, secondaryCategoryIds, enabled]);
+  }, [categoryId, productType, customKeywords, generationSettings, exportFormat, mergeOnRegen, selectedNameColumn, selectedArticleColumn, secondaryCategoryIds, categorySourceMode, selectedCategoryColumn, enabled]);
 }
 
 /** Clear the autosaved settings (e.g. on full reset) */

@@ -13,6 +13,107 @@ export function findCategoryByName(name: string): OzonCategory | undefined {
   return OZON_CATEGORIES.find(c => c.name === name);
 }
 
+/** Match quality for `matchCategoryFromText` — useful for UI hints */
+export type CategoryMatchQuality = 'exact' | 'normalized' | 'fuzzy' | 'none';
+
+/** Result of attempting to match a free-form text to an Ozon category */
+export interface CategoryMatchResult {
+  category: OzonCategory | null;
+  quality: CategoryMatchQuality;
+  /** The normalized input that was used for matching (lowercased, trimmed) */
+  normalizedInput: string;
+}
+
+/**
+ * Normalize a category-ish string for matching:
+ *  - lowercase, trim
+ *  - collapse whitespace
+ *  - strip leading/trailing punctuation
+ *  - replace «ё» → «е» (Ozon category names use «е»)
+ */
+function normalizeForMatch(input: string): string {
+  return input
+    .toLowerCase()
+    .trim()
+    .replace(/ё/g, 'е')
+    .replace(/[«»"'`()]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[—\-\s]+|[—\-\s]+$/g, '');
+}
+
+/**
+ * Match a free-form text (e.g. from an Excel cell) to an Ozon category.
+ *
+ * Matching strategy (in order, first hit wins):
+ *  1. **exact** — normalized input equals a category name exactly
+ *  2. **normalized** — input contains a category name (or vice versa)
+ *  3. **fuzzy** — every word of the input is found inside a category name
+ *     (or its product types). Returns the first such match.
+ *
+ * Returns `{ category: null, quality: 'none' }` if nothing matched.
+ *
+ * Use case: per-row category column — sellers often have a «Категория»
+ * column in their Excel file with values like «Пледы», «Постельное белье»,
+ * «Пледы и покрывала» that should map to Ozon categories automatically.
+ */
+export function matchCategoryFromText(input: string): CategoryMatchResult {
+  const normalized = normalizeForMatch(input);
+  if (!normalized) {
+    return { category: null, quality: 'none', normalizedInput: normalized };
+  }
+
+  // 1. Exact match (after normalization)
+  const exact = OZON_CATEGORIES.find(c => normalizeForMatch(c.name) === normalized);
+  if (exact) {
+    return { category: exact, quality: 'exact', normalizedInput: normalized };
+  }
+
+  // 2. Normalized containment — either the input contains a category name
+  //    or a category name contains the input. We prefer the longest matching
+  //    category name to avoid «Плед» matching «Пледы и покрывала» first when
+  //    the user typed «Пледы».
+  let bestContains: OzonCategory | null = null;
+  let bestContainsLen = 0;
+  for (const cat of OZON_CATEGORIES) {
+    const catNorm = normalizeForMatch(cat.name);
+    if (!catNorm) continue;
+    if (normalized === catNorm) continue; // already handled above
+    if (normalized.includes(catNorm) || catNorm.includes(normalized)) {
+      if (catNorm.length > bestContainsLen) {
+        bestContainsLen = catNorm.length;
+        bestContains = cat;
+      }
+    }
+  }
+  if (bestContains) {
+    return { category: bestContains, quality: 'normalized', normalizedInput: normalized };
+  }
+
+  // 3. Fuzzy — split input into words, every word must appear inside the
+  //    category name (or its product types joined). This handles inputs
+  //    like «пледы покрывала» → «Пледы и покрывала».
+  const words = normalized.split(/\s+/).filter(w => w.length > 1);
+  if (words.length === 0) {
+    return { category: null, quality: 'none', normalizedInput: normalized };
+  }
+  // Skip overly generic single-word inputs like «товар» / «продукт»
+  const GENERIC_WORDS = new Set(['товар', 'товары', 'продукт', 'продукты', 'категория', 'кат', 'вид', 'тип']);
+  if (words.length === 1 && GENERIC_WORDS.has(words[0])) {
+    return { category: null, quality: 'none', normalizedInput: normalized };
+  }
+
+  for (const cat of OZON_CATEGORIES) {
+    const catNorm = normalizeForMatch(cat.name);
+    const typesNorm = normalizeForMatch(cat.productTypes.join(' '));
+    const haystack = `${catNorm} ${typesNorm}`;
+    if (words.every(w => haystack.includes(w))) {
+      return { category: cat, quality: 'fuzzy', normalizedInput: normalized };
+    }
+  }
+
+  return { category: null, quality: 'none', normalizedInput: normalized };
+}
+
 /** Fuzzy search categories — matches against category name and product types */
 export function searchCategories(query: string): OzonCategory[] {
   if (!query.trim()) return OZON_CATEGORIES;
